@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RayonScan Pro</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.0.0/dist/tabler-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#fff;--bg2:#f7f6f3;--bg3:#f0efe9;--text:#1a1a18;--text2:#6b6a64;--text3:#9c9b95;--border:rgba(0,0,0,0.12);--border2:rgba(0,0,0,0.22);--info-bg:#e6f1fb;--info-text:#185fa5;--warn-bg:#faeeda;--warn-text:#854f0b;--danger-bg:#fcebeb;--danger-text:#a32d2d;--success-bg:#eaf3de;--success-text:#3b6d11;--accent:#1D9E75;--radius:10px;--radius-lg:14px}
+@media(prefers-color-scheme:dark){:root{--bg:#1c1c1a;--bg2:#252523;--bg3:#2e2e2b;--text:#f0efe9;--text2:#9c9b95;--text3:#6b6a64;--border:rgba(255,255,255,0.1);--border2:rgba(255,255,255,0.2);--info-bg:#0c2d4a;--info-text:#85b7eb;--warn-bg:#3d2a08;--warn-text:#fac775;--danger-bg:#3a1010;--danger-text:#f09595;--success-bg:#172b08;--success-text:#97c459}}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg3);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+.shell{max-width:480px;margin:0 auto;background:var(--bg);min-height:100vh;display:flex;flex-direction:column}
+.screen{display:none;flex-direction:column;flex:1;padding:0 16px 100px}
+.screen.active{display:flex}
+.topbar{display:flex;align-items:center;gap:10px;padding:16px 0 14px;border-bottom:0.5px solid var(--border);margin-bottom:18px;position:sticky;top:0;background:var(--bg);z-index:10}
+.topbar h1{font-size:18px;font-weight:600;flex:1}
+.topbar h2{font-size:17px;font-weight:600;flex:1}
+.back-btn{background:none;border:none;cursor:pointer;color:var(--text2);font-size:22px;padding:2px 8px 2px 0;display:flex;align-items:center}
+.logo-badge{width:32px;height:32px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:white;font-size:16px}
+.tabs{display:flex;border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:18px}
+.tab3{flex:1;padding:9px 0;font-size:13px;font-weight:500;background:none;border:none;cursor:pointer;color:var(--text2);font-family:inherit;transition:all 0.15s}
+.tab3.active{background:var(--bg2);color:var(--text)}
+.card{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:0 14px;margin-bottom:12px}
+.card-inner{padding:14px}
+.btn{width:100%;padding:12px;font-size:15px;font-weight:500;background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius);cursor:pointer;color:var(--text);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;transition:background 0.15s;margin-bottom:10px}
+.btn:hover{background:var(--bg2)}
+.btn:active{transform:scale(0.98)}
+.btn-primary{background:var(--accent);color:white;border-color:transparent}
+.btn-primary:hover{background:#178a65}
+.btn-sm{width:auto;padding:7px 14px;font-size:13px;margin-bottom:0}
+.form-group{margin-bottom:14px}
+.form-group label{font-size:13px;color:var(--text2);display:block;margin-bottom:5px}
+input[type=text],input[type=number],select{width:100%;padding:10px 12px;font-size:14px;border:0.5px solid var(--border2);border-radius:var(--radius);background:var(--bg);color:var(--text);font-family:inherit;outline:none;transition:border-color 0.15s}
+input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(29,158,117,0.12)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.section-label{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:18px 0 10px}
+.empty{text-align:center;padding:3rem 1rem;color:var(--text3);font-size:14px}
+.empty i{font-size:36px;display:block;margin-bottom:10px}
+.dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.product-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:0.5px solid var(--border)}
+.product-row:last-child{border-bottom:none}
+.product-info{flex:1;min-width:0}
+.product-name{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.product-sub{font-size:12px;color:var(--text2);margin-top:1px}
+.product-actions{display:flex;gap:4px}
+.icon-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:18px;padding:4px 6px;border-radius:6px;display:flex;align-items:center;transition:all 0.15s}
+.icon-btn:hover{color:var(--text);background:var(--bg2)}
+.icon-btn.danger:hover{color:var(--danger-text);background:var(--danger-bg)}
+.releve-card{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:12px}
+.releve-icon{width:40px;height:40px;border-radius:10px;background:var(--info-bg);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--info-text);flex-shrink:0}
+.releve-info{flex:1;min-width:0;cursor:pointer}
+.releve-name{font-size:14px;font-weight:500}
+.releve-sub{font-size:12px;color:var(--text2);margin-top:2px}
+.releve-actions{display:flex;gap:2px;flex-shrink:0}
+.enseigne-card{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:12px;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:14px}
+.enseigne-card:hover{border-color:var(--border2);background:var(--bg2)}
+.enseigne-avatar{width:48px;height:48px;border-radius:12px;background:var(--warn-bg);display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--warn-text);flex-shrink:0}
+.enseigne-info{flex:1;min-width:0}
+.enseigne-name{font-size:15px;font-weight:600}
+.enseigne-meta{font-size:12px;color:var(--text2);margin-top:3px}
+.stacked-bar{height:10px;border-radius:5px;overflow:hidden;display:flex;margin:10px 0 4px}
+.stacked-seg{height:100%}
+.stacked-legend{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2)}
+.legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.facing-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid var(--border)}
+.facing-row:last-child{border-bottom:none}
+.facing-info{flex:1;min-width:0}
+.facing-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.facing-sub{font-size:11px;color:var(--text2)}
+.facing-ctrl{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.ctrl-btn{width:30px;height:30px;border:0.5px solid var(--border2);border-radius:8px;background:var(--bg);cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;color:var(--text);font-family:inherit;transition:all 0.12s}
+.ctrl-btn:active{transform:scale(0.92)}
+.facing-count{font-size:15px;font-weight:600;min-width:26px;text-align:center}
+.facing-ml{font-size:12px;color:var(--text2);min-width:44px;text-align:right}
+.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
+.metric{background:var(--bg2);border-radius:var(--radius);padding:14px 12px}
+.metric-label{font-size:12px;color:var(--text2);margin-bottom:4px}
+.metric-value{font-size:24px;font-weight:600}
+.metric-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.result-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:0.5px solid var(--border)}
+.result-row:last-child{border-bottom:none}
+.result-info{flex:1;min-width:0}
+.result-name{font-size:13px;font-weight:500}
+.result-sub{font-size:11px;color:var(--text2);margin-top:1px}
+.bar-wrap{width:70px;height:6px;background:var(--bg2);border-radius:3px;overflow:hidden;flex-shrink:0}
+.bar-fill{height:100%;border-radius:3px}
+.result-pct{font-size:13px;font-weight:600;min-width:38px;text-align:right}
+.result-ml{font-size:12px;color:var(--text2);min-width:44px;text-align:right}
+.badge{font-size:11px;padding:2px 7px;border-radius:6px;font-weight:500;display:inline-block;margin-left:6px;vertical-align:middle}
+.badge-leader{background:var(--info-bg);color:var(--info-text)}
+.badge-low{background:var(--warn-bg);color:var(--warn-text)}
+.sticky-bar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:var(--bg);border-top:0.5px solid var(--border);padding:12px 16px 20px;z-index:20}
+.photo-zone{border:1.5px dashed var(--border2);border-radius:var(--radius-lg);padding:1.5rem 1rem;text-align:center;cursor:pointer;transition:background 0.15s;margin-bottom:14px;position:relative}
+.photo-zone:hover{background:var(--bg2)}
+.photo-zone i{font-size:28px;color:var(--text3);display:block;margin-bottom:6px}
+.photo-zone p{font-size:13px;color:var(--text2)}
+.photo-zone .hint{font-size:11px;color:var(--text3);margin-top:3px}
+#preview-img,#result-photo{width:100%;border-radius:var(--radius);margin-bottom:12px;display:none;max-height:220px;object-fit:cover}
+.photo-clear{position:absolute;top:8px;right:8px;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:3px 8px;font-size:12px;cursor:pointer;color:var(--text2);display:none}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100;align-items:center;justify-content:center;padding:16px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg);border-radius:var(--radius-lg);padding:20px;width:100%;max-width:440px;max-height:90vh;overflow-y:auto}
+.modal h3{font-size:16px;font-weight:600;margin-bottom:16px}
+.modal-actions{display:flex;gap:10px;margin-top:16px}
+.modal-actions button{flex:1}
+canvas{display:block;margin:0 auto}
+.sync-bar{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);padding:8px 0;margin-bottom:4px}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.sync-dot.syncing{background:var(--warn-text);animation:pulse 1s infinite}
+.sync-dot.error{background:var(--danger-text)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- HOME -->
+<div class="screen active" id="screen-home">
+  <div class="topbar">
+    <div class="logo-badge"><i class="ti ti-chart-bar" aria-hidden="true"></i></div>
+    <h1>RayonScan Pro</h1>
+    <div class="sync-bar" id="sync-status"><div class="sync-dot" id="sync-dot"></div><span id="sync-label">Connexion…</span></div>
+  </div>
+  <div class="tabs">
+    <button class="tab3 active" onclick="switchTab('releves',this)">Relevés</button>
+    <button class="tab3" onclick="switchTab('enseignes',this)">Enseignes</button>
+    <button class="tab3" onclick="switchTab('catalogue',this)">Catalogue</button>
+  </div>
+  <div id="tab-releves">
+    <button class="btn" onclick="showScreen('screen-new-releve')"><i class="ti ti-plus" aria-hidden="true"></i> Nouveau relevé</button>
+    <div id="releve-list"></div>
+  </div>
+  <div id="tab-enseignes" style="display:none"><div id="enseignes-list"></div></div>
+  <div id="tab-catalogue" style="display:none">
+    <button class="btn" onclick="openModal('product')"><i class="ti ti-plus" aria-hidden="true"></i> Ajouter une référence</button>
+    <div class="card" id="catalogue-list"></div>
+  </div>
+</div>
+
+<!-- NEW RELEVE -->
+<div class="screen" id="screen-new-releve">
+  <div class="topbar">
+    <button class="back-btn" onclick="showScreen('screen-home')"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+    <h2>Nouveau relevé</h2>
+  </div>
+  <div class="card card-inner">
+    <div class="form-group">
+      <label>Enseigne *</label>
+      <select id="r-enseigne">
+        <option value="">-- Choisir une enseigne --</option>
+        <option>Intermarché Super</option>
+        <option>Intermarché Hyper</option>
+        <option>Carrefour</option>
+        <option>Carrefour Market</option>
+        <option>Leclerc</option>
+        <option>Auchan</option>
+        <option>Super U</option>
+        <option>Hyper U</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Ville / Magasin *</label><input type="text" id="r-magasin" placeholder="ex: Montaren Saint-Médiers"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Type de rayon</label>
+        <select id="r-type"><option>Tomates cerises</option><option>Tomates cocktail</option><option>Fruits & Légumes</option><option>Autre</option></select>
+      </div>
+      <div class="form-group"><label>Date</label><input type="text" id="r-date"></div>
+    </div>
+  </div>
+  <div class="sticky-bar"><button class="btn btn-primary" onclick="startFacings()"><i class="ti ti-arrow-right" aria-hidden="true"></i> Saisir les facings</button></div>
+</div>
+
+<!-- FACINGS -->
+<div class="screen" id="screen-facings">
+  <div class="topbar">
+    <button class="back-btn" onclick="showScreen('screen-new-releve')"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+    <h2 id="facing-title">Facings</h2>
+  </div>
+  <div class="photo-zone" onclick="document.getElementById('photo-input').click()">
+    <i class="ti ti-camera" aria-hidden="true"></i>
+    <p>Photo du rayon</p>
+    <p class="hint">Galerie ou appareil photo · conservée dans l'historique</p>
+    <button class="photo-clear" id="photo-clear" onclick="clearPhoto(event)">✕ Retirer</button>
+  </div>
+  <input type="file" id="photo-input" accept="image/*" style="display:none">
+  <img id="preview-img" alt="Photo rayon">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <p style="font-size:13px;color:var(--text2)">Saisis les facings puis calcule.</p>
+    <button class="btn btn-sm" onclick="openModal('product-facing')"><i class="ti ti-plus" aria-hidden="true"></i> Réf</button>
+  </div>
+  <div class="card" id="facing-list"></div>
+  <div style="height:90px"></div>
+  <div class="sticky-bar"><button class="btn btn-primary" onclick="calcResults()"><i class="ti ti-calculator" aria-hidden="true"></i> Calculer le linéaire</button></div>
+</div>
+
+<!-- RESULTS -->
+<div class="screen" id="screen-results">
+  <div class="topbar">
+    <button class="back-btn" onclick="goBackFromResults()"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+    <h2 id="result-title">Résultats</h2>
+  </div>
+  <img id="result-photo" alt="Photo rayon">
+  <div class="metric-grid" id="result-metrics"></div>
+  <canvas id="pie-chart" width="200" height="200" style="margin-bottom:18px"></canvas>
+  <div class="section-label">Détail par marque</div>
+  <div class="card" id="result-list"></div>
+  <div style="height:90px"></div>
+  <div class="sticky-bar"><button class="btn" onclick="exportCSV()"><i class="ti ti-download" aria-hidden="true"></i> Exporter CSV</button></div>
+</div>
+
+<!-- ENSEIGNE DETAIL -->
+<div class="screen" id="screen-enseigne">
+  <div class="topbar">
+    <button class="back-btn" onclick="showScreen('screen-home')"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+    <h2 id="enseigne-screen-title">Enseigne</h2>
+  </div>
+  <div class="metric-grid" id="ens-metrics"></div>
+  <canvas id="pie-enseigne" width="200" height="200" style="margin-bottom:8px"></canvas>
+  <div id="stacked-wrap" style="margin-bottom:18px"></div>
+  <div class="section-label">Répartition consolidée</div>
+  <div class="card" id="ens-table"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 0 10px">
+    <span class="section-label" style="margin:0">Relevés inclus</span>
+    <button class="btn-sm btn" style="font-size:12px;padding:5px 10px" onclick="toggleReleves()"><i class="ti ti-list" aria-hidden="true"></i> <span id="releves-toggle-label">Afficher</span></button>
+  </div>
+  <div id="ens-releves" style="display:none"></div>
+</div>
+
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<script>
+const SUPABASE_URL='https://ukqepmverhxxvvjjruuh.supabase.co';
+const SUPABASE_KEY='sb_publishable_-BE-ErVtK2enKguiaugY6Q_DaR0RY1i';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+const COLORS=['#378ADD','#1D9E75','#D85A30','#BA7517','#D4537E','#639922','#7F77DD','#E24B4A','#888780','#0F6E56','#185FA5','#854F0B'];
+const DEFAULT_PRODUCTS=[
+  {id:'p1',marque:'Intermarché Terroirs',ref:'Tomates cerises mélangées 350g',type:'Tomates cerises',longueur:10,hauteur:16,poids:'350g',notes:''},
+  {id:'p2',marque:'Petit Prix',ref:'Tomates cerises allongées 250g',type:'Tomates cerises',longueur:5,hauteur:9,poids:'250g',notes:''},
+  {id:'p3',marque:'Savéol',ref:'Cerises jaunes vrac',type:'Tomates cerises',longueur:30,hauteur:40,poids:'vrac',notes:''},
+  {id:'p4',marque:'Les Paysans de Rougeline',ref:'Tomates allongées 500g',type:'Tomates cocktail',longueur:14.5,hauteur:8,poids:'500g',notes:''},
+  {id:'p5',marque:'Les Paysans de Rougeline',ref:'Tomates cerises rondes',type:'Tomates cerises',longueur:11,hauteur:15,poids:'',notes:''},
+  {id:'p6',marque:'Azura',ref:'Les Allongées 400g',type:'Tomates cerises',longueur:5.5,hauteur:12,poids:'400g',notes:''},
+  {id:'p7',marque:'OUI!',ref:'Tomates cerises 1,29€',type:'Tomates cerises',longueur:5,hauteur:13.5,poids:'',notes:''},
+  {id:'p8',marque:"La Pomme d'Amour",ref:'Cerise ronde 500g',type:'Tomates cerises',longueur:7,hauteur:7.5,poids:'500g',notes:''},
+  {id:'p9',marque:'Les Paysans de Rougeline',ref:'Tomates cerises mélangées',type:'Tomates cerises',longueur:5,hauteur:13.5,poids:'',notes:''},
+  {id:'p10',marque:'Les Paysans de Rougeline',ref:'Mélange vrac',type:'Tomates cerises',longueur:23,hauteur:19,poids:'vrac',notes:''},
+  {id:'p11',marque:'Intermarché Terroirs',ref:'Tomates cocktail grappe 500g',type:'Tomates cocktail',longueur:14.5,hauteur:8,poids:'500g',notes:''},
+  {id:'p12',marque:"La Pomme d'Amour",ref:'Cerise allongée 250g',type:'Tomates cerises',longueur:7.5,hauteur:9,poids:'250g',notes:''},
+];
+
+let products=[];
+let releves=[];
+let currentReleve=null;
+let facings={};
+let photoBase64=null;
+let modalCtx=null;
+let resultFrom='home';
+
+// Sync status
+function setSyncStatus(state,label){
+  const dot=document.getElementById('sync-dot');
+  const lbl=document.getElementById('sync-label');
+  dot.className='sync-dot'+(state==='syncing'?' syncing':state==='error'?' error':'');
+  lbl.textContent=label;
+}
+
+// INIT — charge les données depuis Supabase
+async function init(){
+  setSyncStatus('syncing','Chargement…');
+  try{
+    const [prodRes,relRes]=await Promise.all([
+      sb.from('produits').select('*'),
+      sb.from('releves').select('*')
+    ]);
+    if(prodRes.data&&prodRes.data.length>0){
+      products=prodRes.data;
+    } else {
+      // Premier lancement : on insère les produits par défaut
+      products=DEFAULT_PRODUCTS;
+      await sb.from('produits').insert(DEFAULT_PRODUCTS.map(p=>({...p,largeur:p.longueur})));
+    }
+    releves=relRes.data||[];
+    setSyncStatus('ok','Synchronisé');
+    renderHome();
+  } catch(e){
+    setSyncStatus('error','Hors ligne');
+    // Fallback local
+    products=JSON.parse(localStorage.getItem('rsp_products')||'null')||DEFAULT_PRODUCTS;
+    releves=JSON.parse(localStorage.getItem('rsp_releves')||'[]');
+    renderHome();
+  }
+}
+
+function saveLocal(){
+  localStorage.setItem('rsp_products',JSON.stringify(products));
+  localStorage.setItem('rsp_releves',JSON.stringify(releves));
+}
+
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0,0);
+  if(id==='screen-home')renderHome();
+}
+
+function switchTab(tab,btn){
+  document.querySelectorAll('.tab3').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  ['releves','enseignes','catalogue'].forEach(t=>{
+    document.getElementById('tab-'+t).style.display=t===tab?'block':'none';
+  });
+  if(tab==='catalogue')renderCatalogue();
+  if(tab==='enseignes')renderEnseignes();
+}
+
+function renderHome(){renderReleves();renderCatalogue();}
+
+/* ---- RELEVÉS ---- */
+function renderReleves(){
+  const el=document.getElementById('releve-list');
+  if(!releves.length){el.innerHTML='<div class="empty"><i class="ti ti-clipboard-list"></i>Aucun relevé pour l\'instant.</div>';return;}
+  el.innerHTML=releves.slice().reverse().map(r=>{
+    const total=r.total||0;
+    const results=r.results||[];
+    return`<div class="releve-card">
+      <div class="releve-icon"><i class="ti ti-building-store"></i></div>
+      <div class="releve-info" onclick="showReleve('${r.id}','home')">
+        <div class="releve-name">${r.enseigne} — ${r.magasin}</div>
+        <div class="releve-sub">${r.date} · ${r.type} · <strong>${total.toFixed(2)}m</strong> · ${results.length} réf.</div>
+      </div>
+      <div class="releve-actions">
+        <button class="icon-btn" onclick="openModal('rename','${r.id}')" aria-label="Renommer"><i class="ti ti-pencil"></i></button>
+        <button class="icon-btn danger" onclick="deleteReleve('${r.id}')" aria-label="Supprimer"><i class="ti ti-trash"></i></button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function deleteReleve(id){
+  if(!confirm('Supprimer ce relevé ?'))return;
+  releves=releves.filter(r=>r.id!==id);
+  saveLocal();renderReleves();renderEnseignes();
+  await sb.from('releves').delete().eq('id',id);
+}
+
+/* ---- ENSEIGNES ---- */
+function renderEnseignes(){
+  const el=document.getElementById('enseignes-list');
+  if(!releves.length){el.innerHTML='<div class="empty"><i class="ti ti-building-store"></i>Aucun relevé disponible.</div>';return;}
+  const grouped=groupByEnseigne();
+  if(!Object.keys(grouped).length){el.innerHTML='<div class="empty">Aucune enseigne.</div>';return;}
+  el.innerHTML=Object.entries(grouped).map(([enseigne,data])=>{
+    const {lines,total,nbReleves,nbMagasins}=data;
+    const segs=lines.map((l,i)=>`<div class="stacked-seg" style="width:${(l.totalMl/total*100).toFixed(1)}%;background:${COLORS[i%COLORS.length]}"></div>`).join('');
+    const leg=lines.slice(0,4).map((l,i)=>`<div class="legend-item"><div class="legend-dot" style="background:${COLORS[i%COLORS.length]}"></div>${l.marque} ${(l.totalMl/total*100).toFixed(0)}%</div>`).join('');
+    return`<div class="enseigne-card" onclick="showEnseigneDetail('${enseigne}')">
+      <div class="enseigne-avatar"><i class="ti ti-building-store"></i></div>
+      <div style="flex:1;min-width:0">
+        <div class="enseigne-name">${enseigne}</div>
+        <div class="enseigne-meta">${nbReleves} relevé${nbReleves>1?'s':''} · ${nbMagasins} magasin${nbMagasins>1?'s':''} · ${total.toFixed(2)}m consolidé</div>
+        <div class="stacked-bar">${segs}</div>
+        <div class="stacked-legend">${leg}${lines.length>4?`<div class="legend-item" style="color:var(--text3)">+${lines.length-4} autres</div>`:''}</div>
+      </div>
+      <i class="ti ti-chevron-right" style="color:var(--text3);font-size:18px;flex-shrink:0"></i>
+    </div>`;
+  }).join('');
+}
+
+function groupByEnseigne(){
+  const grouped={};
+  releves.forEach(r=>{
+    const key=r.enseigne.trim();
+    if(!grouped[key])grouped[key]={releves:[],magasins:new Set()};
+    grouped[key].releves.push(r);
+    grouped[key].magasins.add(r.magasin);
+  });
+  const result={};
+  Object.entries(grouped).forEach(([enseigne,g])=>{
+    const mlSum={};
+    g.releves.forEach(r=>{
+      (r.results||[]).forEach(l=>{
+        const p=products.find(x=>x.id===l.pid);
+        const marque=p?p.marque:'?';
+        if(!mlSum[marque])mlSum[marque]=0;
+        mlSum[marque]+=l.ml;
+      });
+    });
+    const lines=Object.entries(mlSum).map(([marque,totalMl])=>({marque,totalMl})).sort((a,b)=>b.totalMl-a.totalMl);
+    const total=lines.reduce((s,l)=>s+l.totalMl,0);
+    result[enseigne]={lines,total,nbReleves:g.releves.length,nbMagasins:g.magasins.size,releves:g.releves};
+  });
+  return result;
+}
+
+function showEnseigneDetail(enseigne){
+  const data=groupByEnseigne()[enseigne];
+  if(!data)return;
+  const {lines,total,nbReleves,nbMagasins,releves:rs}=data;
+  document.getElementById('enseigne-screen-title').textContent=enseigne;
+  document.getElementById('ens-metrics').innerHTML=`
+    <div class="metric"><div class="metric-label">Linéaire consolidé</div><div class="metric-value">${total.toFixed(2)}<span style="font-size:14px;font-weight:400"> m</span></div><div class="metric-sub">${nbReleves} relevé${nbReleves>1?'s':''} · ${nbMagasins} magasin${nbMagasins>1?'s':''}</div></div>
+    <div class="metric"><div class="metric-label">Marques présentes</div><div class="metric-value">${lines.length}</div><div class="metric-sub">tous magasins confondus</div></div>`;
+  drawPieOn('pie-enseigne',lines.map(l=>({ml:l.totalMl})),total);
+  const segs=lines.map((l,i)=>`<div class="stacked-seg" style="width:${(l.totalMl/total*100).toFixed(1)}%;background:${COLORS[i%COLORS.length]}"></div>`).join('');
+  const leg=lines.map((l,i)=>`<div class="legend-item"><div class="legend-dot" style="background:${COLORS[i%COLORS.length]}"></div>${l.marque} <strong>${(l.totalMl/total*100).toFixed(1)}%</strong></div>`).join('');
+  document.getElementById('stacked-wrap').innerHTML=`<div class="stacked-bar" style="height:14px;border-radius:7px">${segs}</div><div class="stacked-legend" style="margin-top:10px">${leg}</div>`;
+  const maxML=lines.length?Math.max(...lines.map(l=>l.totalMl)):1;
+  document.getElementById('ens-table').innerHTML=lines.map((l,i)=>{
+    const pct=total>0?(l.totalMl/total*100):0;
+    const badge=i===0?'<span class="badge badge-leader">leader</span>':pct<5?'<span class="badge badge-low">faible</span>':'';
+    return`<div class="result-row">
+      <div class="dot" style="background:${COLORS[i%COLORS.length]}"></div>
+      <div class="result-info"><div class="result-name">${l.marque}${badge}</div><div class="result-sub">${nbReleves} relevés · ${rs.filter(r=>r.results&&r.results.some(x=>{const p=products.find(y=>y.id===x.pid);return p&&p.marque===l.marque;})).length} magasins</div></div>
+      <div class="bar-wrap"><div class="bar-fill" style="width:${(l.totalMl/maxML*100).toFixed(1)}%;background:${COLORS[i%COLORS.length]}"></div></div>
+      <div class="result-pct">${pct.toFixed(1)}%</div>
+      <div class="result-ml">${l.totalMl.toFixed(2)}m</div>
+    </div>`;
+  }).join('');
+  document.getElementById('ens-releves').innerHTML=rs.slice().reverse().map(r=>`
+    <div class="releve-card" style="cursor:pointer" onclick="showReleve('${r.id}','enseigne')">
+      <div class="releve-icon" style="background:var(--bg2);color:var(--text2)"><i class="ti ti-file-analytics"></i></div>
+      <div class="releve-info"><div class="releve-name">${r.magasin}</div><div class="releve-sub">${r.date} · ${(r.total||0).toFixed(2)}m</div></div>
+      <i class="ti ti-chevron-right" style="color:var(--text3);font-size:18px"></i>
+    </div>`).join('');
+  document.getElementById('ens-releves').style.display='none';
+  document.getElementById('releves-toggle-label').textContent='Afficher';
+  showScreen('screen-enseigne');
+}
+
+function toggleReleves(){
+  const el=document.getElementById('ens-releves');
+  const lbl=document.getElementById('releves-toggle-label');
+  if(el.style.display==='none'){el.style.display='block';lbl.textContent='Masquer';}
+  else{el.style.display='none';lbl.textContent='Afficher';}
+}
+
+/* ---- CATALOGUE ---- */
+function renderCatalogue(){
+  const el=document.getElementById('catalogue-list');
+  if(!products.length){el.innerHTML='<div class="empty">Aucune référence</div>';return;}
+  el.innerHTML=products.map((p,i)=>`
+    <div class="product-row">
+      <div class="dot" style="background:${COLORS[i%COLORS.length]}"></div>
+      <div class="product-info">
+        <div class="product-name">${p.marque}</div>
+        <div class="product-sub">${p.ref} · <strong>${p.longueur||p.largeur}cm</strong> · ${p.type}</div>
+      </div>
+      <div class="product-actions">
+        <button class="icon-btn" onclick="openModal('edit-product','${p.id}')" aria-label="Modifier"><i class="ti ti-edit"></i></button>
+        <button class="icon-btn danger" onclick="deleteProduct('${p.id}')" aria-label="Supprimer"><i class="ti ti-trash"></i></button>
+      </div>
+    </div>`).join('');
+}
+
+async function deleteProduct(id){
+  if(!confirm('Supprimer cette référence ?'))return;
+  products=products.filter(p=>p.id!==id);
+  saveLocal();renderCatalogue();
+  await sb.from('produits').delete().eq('id',id);
+}
+
+/* ---- MODAL ---- */
+function openModal(type,id){
+  modalCtx={type,id};
+  const c=document.getElementById('modal-content');
+  if(type==='rename'){
+    const r=releves.find(x=>x.id===id);
+    c.innerHTML=`<h3>Renommer le relevé</h3>
+      <div class="form-group"><label>Enseigne</label>
+        <select id="mod-enseigne">
+          <option value="">-- Choisir --</option>
+          <option${r.enseigne==='Intermarché Super'?' selected':''}>Intermarché Super</option>
+          <option${r.enseigne==='Intermarché Hyper'?' selected':''}>Intermarché Hyper</option>
+          <option${r.enseigne==='Carrefour'?' selected':''}>Carrefour</option>
+          <option${r.enseigne==='Carrefour Market'?' selected':''}>Carrefour Market</option>
+          <option${r.enseigne==='Leclerc'?' selected':''}>Leclerc</option>
+          <option${r.enseigne==='Auchan'?' selected':''}>Auchan</option>
+          <option${r.enseigne==='Super U'?' selected':''}>Super U</option>
+          <option${r.enseigne==='Hyper U'?' selected':''}>Hyper U</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Magasin</label><input type="text" id="mod-magasin" value="${r.magasin}"></div>
+      <div class="modal-actions"><button class="btn" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveModal()"><i class="ti ti-check"></i> Enregistrer</button></div>`;
+  } else {
+    const p=type==='edit-product'?products.find(x=>x.id===id):null;
+    const lon=p?(p.longueur||p.largeur||''):'';
+    c.innerHTML=`<h3>${p?'Modifier la référence':'Nouvelle référence'}</h3>
+      <div class="form-group"><label>Marque *</label><input type="text" id="mod-marque" value="${p?p.marque:''}" placeholder="ex: Azura"></div>
+      <div class="form-group"><label>Référence *</label><input type="text" id="mod-ref" value="${p?p.ref:''}" placeholder="ex: Les Allongées 400g"></div>
+      <div class="form-group"><label>Type</label><select id="mod-type">
+        <option${p&&p.type==='Tomates cerises'?' selected':''}>Tomates cerises</option>
+        <option${p&&p.type==='Tomates cocktail'?' selected':''}>Tomates cocktail</option>
+        <option${p&&p.type==='Tomates rondes'?' selected':''}>Tomates rondes</option>
+        <option${p&&p.type==='Fruits & Légumes'?' selected':''}>Fruits & Légumes</option>
+        <option${p&&p.type==='Autre'?' selected':''}>Autre</option>
+      </select></div>
+      <div class="form-row">
+        <div class="form-group"><label>Longueur (cm) *</label><input type="number" id="mod-longueur" value="${lon}" placeholder="13.5" step="0.5" min="1"></div>
+        <div class="form-group"><label>Hauteur (cm)</label><input type="number" id="mod-hauteur" value="${p&&p.hauteur?p.hauteur:''}" placeholder="12" step="0.5"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Poids</label><input type="text" id="mod-poids" value="${p?p.poids:''}" placeholder="400g"></div>
+        <div class="form-group"><label>Notes</label><input type="text" id="mod-notes" value="${p?p.notes:''}" placeholder="Barquette..."></div>
+      </div>
+      <div class="modal-actions"><button class="btn" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveModal()"><i class="ti ti-check"></i> Enregistrer</button></div>`;
+  }
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal(){document.getElementById('modal-overlay').classList.remove('open');}
+
+async function saveModal(){
+  const {type,id}=modalCtx;
+  if(type==='rename'){
+    const r=releves.find(x=>x.id===id);
+    if(r){
+      r.enseigne=document.getElementById('mod-enseigne').value;
+      r.magasin=document.getElementById('mod-magasin').value.trim();
+      saveLocal();closeModal();renderReleves();renderEnseignes();
+      await sb.from('releves').update({enseigne:r.enseigne,magasin:r.magasin}).eq('id',id);
+    }
+  } else {
+    const marque=document.getElementById('mod-marque').value.trim();
+    const ref=document.getElementById('mod-ref').value.trim();
+    const longueur=parseFloat(document.getElementById('mod-longueur').value);
+    if(!marque||!ref||!longueur){alert('Marque, référence et longueur sont obligatoires.');return;}
+    const obj={marque,ref,type:document.getElementById('mod-type').value,longueur,largeur:longueur,hauteur:parseFloat(document.getElementById('mod-hauteur').value)||0,poids:document.getElementById('mod-poids').value.trim(),notes:document.getElementById('mod-notes').value.trim()};
+    if(type==='edit-product'){
+      const idx=products.findIndex(x=>x.id===id);
+      if(idx>-1)products[idx]={...products[idx],...obj};
+      saveLocal();closeModal();renderCatalogue();
+      await sb.from('produits').update(obj).eq('id',id);
+    } else {
+      const newP={id:'p'+Date.now(),...obj};
+      products.push(newP);
+      if(type==='product-facing')facings[newP.id]={pid:newP.id,count:0};
+      saveLocal();closeModal();
+      if(type==='product-facing')renderFacings();else renderCatalogue();
+      await sb.from('produits').insert([newP]);
+    }
+  }
+}
+
+/* ---- PHOTO ---- */
+document.getElementById('photo-input').addEventListener('change',function(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    const img=document.getElementById('preview-img');
+    img.src=ev.target.result;img.style.display='block';
+    photoBase64=ev.target.result;
+    document.getElementById('photo-clear').style.display='block';
+  };
+  reader.readAsDataURL(file);
+});
+
+function clearPhoto(e){
+  e.stopPropagation();photoBase64=null;
+  document.getElementById('preview-img').style.display='none';
+  document.getElementById('preview-img').src='';
+  document.getElementById('photo-clear').style.display='none';
+  document.getElementById('photo-input').value='';
+}
+
+/* ---- FACINGS ---- */
+function startFacings(){
+  const enseigne=document.getElementById('r-enseigne').value;
+  const magasin=document.getElementById('r-magasin').value.trim();
+  if(!enseigne||!magasin){alert('Choisir une enseigne et saisir le magasin.');return;}
+  const today=new Date().toLocaleDateString('fr-FR');
+  currentReleve={id:'r'+Date.now(),enseigne,magasin,type:document.getElementById('r-type').value,date:document.getElementById('r-date').value.trim()||today,facings:{},total:0,results:[]};
+  facings={};products.forEach(p=>{facings[p.id]={pid:p.id,count:0};});
+  photoBase64=null;
+  document.getElementById('preview-img').style.display='none';document.getElementById('preview-img').src='';
+  document.getElementById('photo-clear').style.display='none';document.getElementById('photo-input').value='';
+  document.getElementById('facing-title').textContent=enseigne+' — '+magasin;
+  renderFacings();showScreen('screen-facings');
+}
+
+function renderFacings(){
+  const el=document.getElementById('facing-list');
+  el.innerHTML=products.map((p,i)=>{
+    const lon=p.longueur||p.largeur||0;
+    return`<div class="facing-row">
+      <div class="dot" style="background:${COLORS[i%COLORS.length]}"></div>
+      <div class="facing-info"><div class="facing-name">${p.marque}</div><div class="facing-sub">${p.ref} · ${lon}cm</div></div>
+      <div class="facing-ctrl">
+        <button class="ctrl-btn" onclick="chgFacing('${p.id}',-1)">−</button>
+        <span class="facing-count" id="fc-${p.id}">${facings[p.id]?facings[p.id].count:0}</span>
+        <button class="ctrl-btn" onclick="chgFacing('${p.id}',1)">+</button>
+      </div>
+      <div class="facing-ml" id="fm-${p.id}">${facings[p.id]&&facings[p.id].count>0?(facings[p.id].count*(lon/100)).toFixed(2)+'m':'—'}</div>
+    </div>`;
+  }).join('');
+}
+
+function chgFacing(pid,delta){
+  if(!facings[pid])facings[pid]={pid,count:0};
+  facings[pid].count=Math.max(0,facings[pid].count+delta);
+  const p=products.find(x=>x.id===pid);
+  const lon=p?(p.longueur||p.largeur||0):0;
+  const c=facings[pid].count;
+  document.getElementById('fc-'+pid).textContent=c;
+  document.getElementById('fm-'+pid).textContent=c>0?(c*(lon/100)).toFixed(2)+'m':'—';
+}
+
+async function calcResults(){
+  const lines=Object.values(facings).filter(f=>f.count>0).map(f=>{
+    const p=products.find(x=>x.id===f.pid);
+    const lon=p?(p.longueur||p.largeur||0):0;
+    return{...f,p,ml:f.count*(lon/100)};
+  }).sort((a,b)=>b.ml-a.ml);
+  if(!lines.length){alert('Saisir au moins un facing.');return;}
+  const total=lines.reduce((s,l)=>s+l.ml,0);
+  currentReleve.facings=JSON.parse(JSON.stringify(facings));
+  currentReleve.results=lines.map(l=>({pid:l.pid,count:l.count,ml:l.ml}));
+  currentReleve.total=total;
+  if(photoBase64)currentReleve.photo=photoBase64;
+  const existing=releves.findIndex(r=>r.id===currentReleve.id);
+  if(existing>-1)releves[existing]=currentReleve;else releves.push(currentReleve);
+  saveLocal();
+  resultFrom='home';renderResults(currentReleve);showScreen('screen-results');
+  // Sync Supabase
+  setSyncStatus('syncing','Sauvegarde…');
+  try{
+    await sb.from('releves').upsert([{
+      id:currentReleve.id,enseigne:currentReleve.enseigne,magasin:currentReleve.magasin,
+      type:currentReleve.type,date:currentReleve.date,total:currentReleve.total,
+      photo:currentReleve.photo||null,facings:currentReleve.facings,results:currentReleve.results
+    }]);
+    setSyncStatus('ok','Synchronisé');
+  } catch(e){setSyncStatus('error','Erreur sync');}
+}
+
+function showReleve(id,from){
+  const r=releves.find(x=>x.id===id);if(!r)return;
+  currentReleve=r;resultFrom=from||'home';renderResults(r);showScreen('screen-results');
+}
+
+function goBackFromResults(){
+  if(resultFrom==='enseigne')showScreen('screen-enseigne');
+  else showScreen('screen-home');
+}
+
+/* ---- PIE ---- */
+function drawPieOn(canvasId,lines,total){
+  const canvas=document.getElementById(canvasId);if(!canvas)return;
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,200,200);
+  let start=-Math.PI/2;
+  lines.forEach((l,i)=>{
+    const ml=l.ml||l.totalMl||0;
+    const slice=(ml/total)*Math.PI*2;
+    ctx.beginPath();ctx.moveTo(100,100);ctx.arc(100,100,90,start,start+slice);
+    ctx.closePath();ctx.fillStyle=COLORS[i%COLORS.length];ctx.fill();
+    ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();
+    if(slice>0.2){
+      const mid=start+slice/2;
+      ctx.fillStyle='#fff';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(((ml/total)*100).toFixed(0)+'%',100+Math.cos(mid)*55,100+Math.sin(mid)*55);
+    }
+    start+=slice;
+  });
+}
+
+/* ---- RESULTS ---- */
+function renderResults(r){
+  document.getElementById('result-title').textContent=r.enseigne+' — '+r.magasin;
+  const rp=document.getElementById('result-photo');
+  if(r.photo){rp.src=r.photo;rp.style.display='block';}else rp.style.display='none';
+  const lines=(r.results||[]).map(l=>({...l,p:products.find(x=>x.id===l.pid)||{marque:'?',ref:'?',longueur:0,largeur:0}}));
+  const total=r.total||lines.reduce((s,l)=>s+l.ml,0);
+  const nbM=[...new Set(lines.map(l=>l.p.marque))].length;
+  const totF=lines.reduce((s,l)=>s+l.count,0);
+  document.getElementById('result-metrics').innerHTML=`
+    <div class="metric"><div class="metric-label">Linéaire total</div><div class="metric-value">${total.toFixed(2)}<span style="font-size:15px;font-weight:400"> m</span></div><div class="metric-sub">${r.date} · ${r.type}</div></div>
+    <div class="metric"><div class="metric-label">Marques</div><div class="metric-value">${nbM}</div><div class="metric-sub">${totF} facings</div></div>`;
+  drawPieOn('pie-chart',lines,total);
+  const maxML=lines.length?Math.max(...lines.map(l=>l.ml)):1;
+  document.getElementById('result-list').innerHTML=lines.map((l,i)=>{
+    const pct=total>0?(l.ml/total)*100:0;
+    const badge=l.ml===maxML?'<span class="badge badge-leader">leader</span>':pct<5?'<span class="badge badge-low">faible</span>':'';
+    return`<div class="result-row">
+      <div class="dot" style="background:${COLORS[i%COLORS.length]}"></div>
+      <div class="result-info"><div class="result-name">${l.p.marque}${badge}</div><div class="result-sub">${l.p.ref} · ${l.count} facing${l.count>1?'s':''}</div></div>
+      <div class="bar-wrap"><div class="bar-fill" style="width:${(l.ml/maxML*100).toFixed(1)}%;background:${COLORS[i%COLORS.length]}"></div></div>
+      <div class="result-pct">${pct.toFixed(1)}%</div>
+      <div class="result-ml">${l.ml.toFixed(2)}m</div>
+    </div>`;
+  }).join('');
+}
+
+/* ---- EXPORT ---- */
+function exportCSV(){
+  if(!currentReleve)return;
+  const lines=(currentReleve.results||[]).map(l=>({...l,p:products.find(x=>x.id===l.pid)||{marque:'?',ref:'?'}}));
+  const total=currentReleve.total||0;
+  const rows=[['RayonScan Pro — Relevé linéaire'],[`Enseigne:;${currentReleve.enseigne} ${currentReleve.magasin}`],[`Date:;${currentReleve.date}`],[`Type:;${currentReleve.type}`],[`Linéaire total:;${total.toFixed(2)}m`],[],['Marque','Référence','Facings','ML (m)','Part (%)'],...lines.map(l=>[l.p.marque,l.p.ref,l.count,l.ml.toFixed(2),(total>0?(l.ml/total*100):0).toFixed(1)+'%']),[], ['TOTAL','',lines.reduce((s,l)=>s+l.count,0),total.toFixed(2),'100%']];
+  const csv='\uFEFF'+rows.map(r=>Array.isArray(r)?r.join(';'):r).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download=`releve_${currentReleve.enseigne}_${currentReleve.magasin}_${currentReleve.date.replace(/\//g,'-')}.csv`.replace(/\s/g,'_');
+  a.click();
+}
+
+document.getElementById('r-date').value=new Date().toLocaleDateString('fr-FR');
+init();
+</script>
+</body>
+</html>
