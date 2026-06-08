@@ -428,14 +428,14 @@ async function renderEquipe(){
   if(!el)return;
   el.innerHTML='<div class="empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>Chargement…</div>';
   try{
-    // Charge les profils de l'équipe
+    // Charge les profils de l\'equipe
     const{data:teamProfiles}=await sb.from('profiles').select('*').eq('manager_id',currentUser.id);
     const teamIds=(teamProfiles||[]).map(p=>p.id);
     if(!teamIds.length){el.innerHTML='<div class="empty"><i class="ti ti-users"></i>Aucun commercial dans votre équipe.</div>';return;}
-    // Charge les relevés de l'équipe
+    // Charge les relevés de l\'equipe
     const{data:teamReleves}=await sb.from('releves').select('*').in('user_id',teamIds);
     const allReleves=teamReleves||[];
-    if(!allReleves.length){el.innerHTML='<div class="empty"><i class="ti ti-clipboard-list"></i>Aucun relevé dans l'équipe.</div>';return;}
+    if(!allReleves.length){el.innerHTML='<div class="empty"><i class="ti ti-clipboard-list"></i>Aucun releve dans l\'equipe.</div>';return;}
     // Métriques
     const totalML=allReleves.reduce((s,r)=>s+(r.total||0),0);
     metricsEl.innerHTML=`
