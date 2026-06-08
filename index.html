@@ -126,7 +126,10 @@ canvas{display:block;margin:0 auto}
   <div class="topbar" style="background:#1a1a18;border-bottom:none;padding:16px 16px 14px;margin:0 -16px 18px">
     <div class="logo-badge"><i class="ti ti-chart-bar" aria-hidden="true"></i></div>
     <h1 style="color:white">RayonScan <span style="color:#1D9E75">Pro</span></h1>
-    <div class="sync-bar" id="sync-status" style="color:rgba(255,255,255,0.6)"><div class="sync-dot" id="sync-dot"></div><span id="sync-label">Connexion…</span></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="sync-bar" id="sync-status" style="color:rgba(255,255,255,0.6)"><div class="sync-dot" id="sync-dot"></div><span id="sync-label">…</span></div>
+      <button onclick="doLogout()" style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,0.6);font-size:18px;padding:4px;display:flex;align-items:center" title="Déconnexion"><i class="ti ti-logout"></i></button>
+    </div>
   </div>
   <div class="tabs">
     <button class="tab4 active" onclick="switchTab('releves',this)">Relevés</button>
@@ -302,30 +305,49 @@ let resultFrom='home';
 let editingReleve=false;
 let catalogueFilter='all';
 
-// PASSWORD
-const PWD='FDV_AZURA';
-const stored=sessionStorage.getItem('rsp_auth');
-if(stored!==PWD){
+// AUTH
+let currentUser=null;
+let currentProfile=null;
+
+function showLoginScreen(){
   document.querySelector('.shell').innerHTML=`
-    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:2rem;gap:16px">
-      <div style="width:48px;height:48px;border-radius:12px;background:#1a1a18;display:flex;align-items:center;justify-content:center;color:#1D9E75;font-size:24px"><i class="ti ti-chart-bar"></i></div>
-      <div style="font-size:20px;font-weight:500;color:var(--text)">RayonScan Pro</div>
-      <div style="font-size:14px;color:var(--text2);margin-bottom:8px">Accès restreint</div>
-      <input type="password" id="pwd-input" placeholder="Mot de passe" style="width:100%;max-width:280px;padding:12px;border:0.5px solid var(--border2);border-radius:10px;font-size:16px;text-align:center;background:var(--bg);color:var(--text)">
-      <button onclick="checkPwd()" style="width:100%;max-width:280px;padding:12px;background:#1a1a18;color:white;border:none;border-radius:10px;font-size:16px;cursor:pointer;font-weight:500">Accéder</button>
-      <div id="pwd-error" style="color:var(--danger-text);font-size:13px;display:none">Mot de passe incorrect</div>
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:2rem;gap:16px;background:var(--bg)">
+      <div style="width:56px;height:56px;border-radius:14px;background:#1a1a18;display:flex;align-items:center;justify-content:center;color:#1D9E75;font-size:28px"><i class="ti ti-chart-bar"></i></div>
+      <div style="font-size:22px;font-weight:500;color:var(--text)">RayonScan <span style="color:#1D9E75">Pro</span></div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:4px">Connectez-vous pour continuer</div>
+      <div style="width:100%;max-width:300px;display:flex;flex-direction:column;gap:10px">
+        <input type="email" id="login-email" placeholder="Email" style="width:100%;padding:12px;border:0.5px solid var(--border2);border-radius:10px;font-size:15px;background:var(--bg);color:var(--text)">
+        <input type="password" id="login-pwd" placeholder="Mot de passe" style="width:100%;padding:12px;border:0.5px solid var(--border2);border-radius:10px;font-size:15px;background:var(--bg);color:var(--text)">
+        <button onclick="doLogin()" id="login-btn" style="width:100%;padding:12px;background:#1a1a18;color:white;border:none;border-radius:10px;font-size:15px;cursor:pointer;font-weight:500">Se connecter</button>
+        <div id="login-error" style="color:var(--danger-text);font-size:13px;text-align:center;display:none"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px">Conçu par Kévin Bouaguel · Développé avec IA</div>
     </div>`;
-  document.getElementById('pwd-input').addEventListener('keydown',e=>{if(e.key==='Enter')checkPwd();});
+  document.getElementById('login-email').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+  document.getElementById('login-pwd').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 }
 
-function checkPwd(){
-  const attempts=parseInt(sessionStorage.getItem('rsp_attempts')||'0');
-  const lockUntil=parseInt(sessionStorage.getItem('rsp_lock')||'0');
-  const now=Date.now();
-  if(now<lockUntil){const secs=Math.ceil((lockUntil-now)/1000);document.getElementById('pwd-error').textContent='Bloqué. Réessaie dans '+secs+'s.';document.getElementById('pwd-error').style.display='block';return;}
-  const val=document.getElementById('pwd-input').value;
-  if(val===PWD){sessionStorage.setItem('rsp_auth',PWD);sessionStorage.removeItem('rsp_attempts');sessionStorage.removeItem('rsp_lock');location.reload();}
-  else{const n=attempts+1;sessionStorage.setItem('rsp_attempts',n);if(n>=3){sessionStorage.setItem('rsp_lock',now+5*60*1000);sessionStorage.setItem('rsp_attempts','0');document.getElementById('pwd-error').textContent='3 tentatives. Bloqué 5 min.';}else document.getElementById('pwd-error').textContent='Incorrect ('+n+'/3).';document.getElementById('pwd-error').style.display='block';}
+async function doLogin(){
+  const email=document.getElementById('login-email').value.trim();
+  const pwd=document.getElementById('login-pwd').value;
+  const btn=document.getElementById('login-btn');
+  const err=document.getElementById('login-error');
+  if(!email||!pwd){err.textContent='Saisir email et mot de passe.';err.style.display='block';return;}
+  btn.textContent='Connexion…';btn.disabled=true;
+  const{data,error}=await sb.auth.signInWithPassword({email,password:pwd});
+  if(error){
+    err.textContent=error.message==='Invalid login credentials'?'Email ou mot de passe incorrect.':error.message;
+    err.style.display='block';btn.textContent='Se connecter';btn.disabled=false;
+  } else {
+    currentUser=data.user;
+    location.reload();
+  }
+}
+
+async function doLogout(){
+  await sb.auth.signOut();
+  currentUser=null;currentProfile=null;
+  location.reload();
 }
 
 function setSyncStatus(state,label){
@@ -336,6 +358,13 @@ function setSyncStatus(state,label){
 }
 
 async function init(){
+  // Vérifie session auth
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session){showLoginScreen();return;}
+  currentUser=session.user;
+  // Charge profil
+  const profRes=await sb.from('profiles').select('*').eq('id',currentUser.id).single();
+  if(profRes.data)currentProfile=profRes.data;
   setSyncStatus('syncing','Chargement…');
   try{
     const [prodRes,relRes]=await Promise.all([sb.from('produits').select('*'),sb.from('releves').select('*')]);
