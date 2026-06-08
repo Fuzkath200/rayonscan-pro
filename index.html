@@ -364,11 +364,7 @@ async function init(){
   currentUser=session.user;
   // Charge profil
   const profRes=await sb.from('profiles').select('*').eq('id',currentUser.id).single();
-  if(profRes.data){
-    currentProfile=profRes.data;
-    const lbl=document.getElementById('sync-label');
-    if(lbl)lbl.textContent=currentProfile.prenom||currentUser.email;
-  }
+  if(profRes.data)currentProfile=profRes.data;
   setSyncStatus('syncing','Chargement…');
   try{
     const [prodRes,relRes]=await Promise.all([sb.from('produits').select('*'),sb.from('releves').select('*')]);
