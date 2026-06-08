@@ -379,11 +379,6 @@ async function init(){
     else{products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));await sb.from('produits').insert(products.map(p=>({id:p.id,marque:p.marque,ref:p.ref,type:p.type,longueur:p.longueur,hauteur:p.hauteur,poids:p.poids,notes:p.notes,centrales:p.centrales||[]})));}
     releves=relRes.data||[];
     setSyncStatus('ok','Synchronisé');
-  // Affiche onglet équipe pour directeur et admin
-  if(currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin')){
-    const btn=document.getElementById('tab-btn-equipe');
-    if(btn)btn.style.display='';
-  }
   renderHome();initPhotoListener();
   }catch(e){
     setSyncStatus('error','Hors ligne');
@@ -420,7 +415,14 @@ function switchTab(tab,btn){
   if(tab==='equipe')renderEquipe();
 }
 
-function renderHome(){renderReleves();renderCatalogue();renderEnseignes();renderCentrales();}
+function renderHome(){
+  // Affiche onglet équipe pour directeur et admin
+  if(currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin')){
+    const btn=document.getElementById('tab-btn-equipe');
+    if(btn)btn.style.display='';
+  }
+  renderReleves();renderCatalogue();renderEnseignes();renderCentrales();
+}
 
 async function renderEquipe(){
   const el=document.getElementById('equipe-list');
