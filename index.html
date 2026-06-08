@@ -192,7 +192,7 @@ canvas{display:block;margin:0 auto}
     <p id="photo-zone-text">Ajouter une photo</p>
     <p class="hint">Jusqu'à 5 photos · galerie ou appareil photo</p>
   </div>
-  <input type="file" id="photo-input" accept="image/*" style="display:none">
+  <input type="file" id="photo-input" accept="image/*" multiple style="display:none">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
     <p style="font-size:13px;color:var(--text2)" id="facing-filter-label">Toutes les références</p>
     <button class="btn btn-sm" onclick="openModal('product-facing')"><i class="ti ti-plus" aria-hidden="true"></i> Réf</button>
@@ -343,7 +343,7 @@ async function init(){
     if(prodRes.data&&prodRes.data.length>0){products=prodRes.data.map(p=>({...p,longueur:p.longueur||p.largeur||0,centrales:p.centrales||[]}));}
     else{products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));await sb.from('produits').insert(products.map(p=>({id:p.id,marque:p.marque,ref:p.ref,type:p.type,longueur:p.longueur,hauteur:p.hauteur,poids:p.poids,notes:p.notes,centrales:p.centrales||[]})));}
     releves=relRes.data||[];
-    setSyncStatus('ok','Synchronisé');renderHome();
+    setSyncStatus('ok','Synchronisé');renderHome();initPhotoListener();
   }catch(e){
     setSyncStatus('error','Hors ligne');
     centrales=JSON.parse(localStorage.getItem('rsp_centrales')||'null')||JSON.parse(JSON.stringify(DEFAULT_CENTRALES));
@@ -677,12 +677,42 @@ async function saveModal(){
 }
 
 // PHOTOS
-document.getElementById('photo-input').addEventListener('change',function(e){
-  const file=e.target.files[0];if(!file)return;
-  if(photos.length>=5){alert('Maximum 5 photos par relevé.');return;}
-  const reader=new FileReader();
-  reader.onload=function(ev){photos.push(ev.target.result);renderPhotoGallery();document.getElementById('photo-input').value='';if(photos.length>=5)document.getElementById('photo-zone').style.display='none';else document.getElementById('photo-zone-text').textContent='Ajouter une photo ('+photos.length+'/5)';};
-  reader.readAsDataURL(file);
+function initPhotoListener(){
+  const photoInput=document.getElementById('photo-input');
+  if(!photoInput)return;
+  photoInput.addEventListener('change',function(e){
+  const files=Array.from(e.target.files);
+  if(!files.length)return;
+  const remaining=5-photos.length;
+  if(remaining<=0){alert('Maximum 5 photos par relevé.');return;}
+  const toLoad=files.slice(0,remaining);
+  if(files.length>remaining)alert('Seulement '+remaining+' photo(s) ajoutée(s) — maximum 5 atteint.');
+  let loaded=0;
+  toLoad.forEach(file=>{
+    const reader=new FileReader();
+    reader.onload=function(ev){
+      // Redimensionner l'image pour éviter les problèmes de taille
+      const img=new Image();
+      img.onload=function(){
+        const canvas=document.createElement('canvas');
+        const maxSize=1200;
+        let w=img.width,h=img.height;
+        if(w>maxSize||h>maxSize){if(w>h){h=Math.round(h*maxSize/w);w=maxSize;}else{w=Math.round(w*maxSize/h);h=maxSize;}}
+        canvas.width=w;canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        photos.push(canvas.toDataURL('image/jpeg',0.7));
+        loaded++;
+        if(loaded===toLoad.length){
+          renderPhotoGallery();
+          document.getElementById('photo-input').value='';
+          if(photos.length>=5)document.getElementById('photo-zone').style.display='none';
+          else document.getElementById('photo-zone-text').textContent='Ajouter des photos ('+photos.length+'/5)';
+        }
+      };
+      img.src=ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 });
 
 function renderPhotoGallery(){
