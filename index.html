@@ -364,7 +364,11 @@ async function init(){
   currentUser=session.user;
   // Charge profil
   const profRes=await sb.from('profiles').select('*').eq('id',currentUser.id).single();
-  if(profRes.data)currentProfile=profRes.data;
+  if(profRes.data){
+    currentProfile=profRes.data;
+    const lbl=document.getElementById('sync-label');
+    if(lbl)lbl.textContent=currentProfile.prenom||currentUser.email;
+  }
   setSyncStatus('syncing','Chargement…');
   try{
     const [prodRes,relRes]=await Promise.all([sb.from('produits').select('*'),sb.from('releves').select('*')]);
@@ -839,7 +843,7 @@ async function calcResults(){
   resultFrom='home';renderResults(currentReleve);showScreen('screen-results');
   setSyncStatus('syncing','Sauvegarde…');
   try{
-    const payload={id:currentReleve.id,enseigne:currentReleve.enseigne,magasin:currentReleve.magasin,centrale:currentReleve.centrale||null,type:currentReleve.type,date:currentReleve.date,total:currentReleve.total,facings:currentReleve.facings,results:currentReleve.results};
+    const payload={id:currentReleve.id,enseigne:currentReleve.enseigne,magasin:currentReleve.magasin,centrale:currentReleve.centrale||null,type:currentReleve.type,date:currentReleve.date,total:currentReleve.total,facings:currentReleve.facings,results:currentReleve.results,user_id:currentUser.id};
     const{error}=await sb.from('releves').upsert([payload]);
     if(error)throw error;setSyncStatus('ok','Synchronisé');
   }catch(e){setSyncStatus('error','Erreur sync');}
