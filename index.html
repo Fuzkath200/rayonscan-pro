@@ -133,7 +133,7 @@ canvas{display:block;margin:0 auto}
   </div>
   <div class="tabs" id="main-tabs">
     <button class="tab4 active" onclick="switchTab('releves',this)">Relevés</button>
-    <button class="tab4" id="tab-btn-equipe" style="display:none" onclick="switchTab('equipe',this)">Equipe</button>
+    <button class="tab4" id="tab-btn-equipe" style="display:none" onclick="switchTab('equipe',this)">Équipe</button>
     <button class="tab4" onclick="switchTab('enseignes',this)">Enseignes</button>
     <button class="tab4" onclick="switchTab('catalogue',this)">Catalogue</button>
     <button class="tab4" onclick="switchTab('centrales',this)">Centrales</button>
@@ -379,6 +379,11 @@ async function init(){
     else{products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));await sb.from('produits').insert(products.map(p=>({id:p.id,marque:p.marque,ref:p.ref,type:p.type,longueur:p.longueur,hauteur:p.hauteur,poids:p.poids,notes:p.notes,centrales:p.centrales||[]})));}
     releves=relRes.data||[];
     setSyncStatus('ok','Synchronisé');
+  // Affiche onglet équipe pour directeur et admin
+  if(currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin')){
+    const btn=document.getElementById('tab-btn-equipe');
+    if(btn)btn.style.display='';
+  }
   renderHome();initPhotoListener();
   }catch(e){
     setSyncStatus('error','Hors ligne');
@@ -415,14 +420,7 @@ function switchTab(tab,btn){
   if(tab==='equipe')renderEquipe();
 }
 
-function renderHome(){
-  // Affiche onglet équipe pour directeur et admin
-  if(currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin')){
-    const btn=document.getElementById('tab-btn-equipe');
-    if(btn)btn.style.display='';
-  }
-  renderReleves();renderCatalogue();renderEnseignes();renderCentrales();
-}
+function renderHome(){renderReleves();renderCatalogue();renderEnseignes();renderCentrales();}
 
 async function renderEquipe(){
   const el=document.getElementById('equipe-list');
