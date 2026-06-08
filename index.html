@@ -131,8 +131,9 @@ canvas{display:block;margin:0 auto}
       <button onclick="doLogout()" style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,0.6);font-size:18px;padding:4px;display:flex;align-items:center" title="Déconnexion"><i class="ti ti-logout"></i></button>
     </div>
   </div>
-  <div class="tabs">
+  <div class="tabs" id="main-tabs">
     <button class="tab4 active" onclick="switchTab('releves',this)">Relevés</button>
+    <button class="tab4" id="tab-btn-equipe" style="display:none" onclick="switchTab('equipe',this)">Équipe</button>
     <button class="tab4" onclick="switchTab('enseignes',this)">Enseignes</button>
     <button class="tab4" onclick="switchTab('catalogue',this)">Catalogue</button>
     <button class="tab4" onclick="switchTab('centrales',this)">Centrales</button>
@@ -140,6 +141,11 @@ canvas{display:block;margin:0 auto}
   <div id="tab-releves">
     <button class="btn" onclick="showScreen('screen-new-releve')"><i class="ti ti-plus" aria-hidden="true"></i> Nouveau relevé</button>
     <div id="releve-list"></div>
+  </div>
+  <div id="tab-equipe" style="display:none">
+    <div id="equipe-metrics" class="metric-grid" style="margin-bottom:12px"></div>
+    <div class="section-label">Relevés de l'équipe</div>
+    <div id="equipe-list"></div>
   </div>
   <div id="tab-enseignes" style="display:none"><div id="enseignes-list"></div></div>
   <div id="tab-catalogue" style="display:none">
@@ -372,7 +378,13 @@ async function init(){
     if(prodRes.data&&prodRes.data.length>0){products=prodRes.data.map(p=>({...p,longueur:p.longueur||p.largeur||0,centrales:p.centrales||[]}));}
     else{products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));await sb.from('produits').insert(products.map(p=>({id:p.id,marque:p.marque,ref:p.ref,type:p.type,longueur:p.longueur,hauteur:p.hauteur,poids:p.poids,notes:p.notes,centrales:p.centrales||[]})));}
     releves=relRes.data||[];
-    setSyncStatus('ok','Synchronisé');renderHome();initPhotoListener();
+    setSyncStatus('ok','Synchronisé');
+  // Affiche onglet équipe pour directeur et admin
+  if(currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin')){
+    const btn=document.getElementById('tab-btn-equipe');
+    if(btn)btn.style.display='';
+  }
+  renderHome();initPhotoListener();
   }catch(e){
     setSyncStatus('error','Hors ligne');
     centrales=JSON.parse(localStorage.getItem('rsp_centrales')||'null')||JSON.parse(JSON.stringify(DEFAULT_CENTRALES));
@@ -398,13 +410,56 @@ function showScreen(id){
 function switchTab(tab,btn){
   document.querySelectorAll('.tab4').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  ['releves','enseignes','catalogue','centrales'].forEach(t=>{document.getElementById('tab-'+t).style.display=t===tab?'block':'none';});
+  ['releves','equipe','enseignes','catalogue','centrales'].forEach(t=>{
+    const el=document.getElementById('tab-'+t);
+    if(el)el.style.display=t===tab?'block':'none';
+  });
   if(tab==='catalogue')renderCatalogue();
   if(tab==='enseignes')renderEnseignes();
   if(tab==='centrales')renderCentrales();
+  if(tab==='equipe')renderEquipe();
 }
 
 function renderHome(){renderReleves();renderCatalogue();renderEnseignes();renderCentrales();}
+
+async function renderEquipe(){
+  const el=document.getElementById('equipe-list');
+  const metricsEl=document.getElementById('equipe-metrics');
+  if(!el)return;
+  el.innerHTML='<div class="empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>Chargement…</div>';
+  try{
+    // Charge les profils de l'équipe
+    const{data:teamProfiles}=await sb.from('profiles').select('*').eq('manager_id',currentUser.id);
+    const teamIds=(teamProfiles||[]).map(p=>p.id);
+    if(!teamIds.length){el.innerHTML='<div class="empty"><i class="ti ti-users"></i>Aucun commercial dans votre équipe.</div>';return;}
+    // Charge les relevés de l'équipe
+    const{data:teamReleves}=await sb.from('releves').select('*').in('user_id',teamIds);
+    const allReleves=teamReleves||[];
+    if(!allReleves.length){el.innerHTML='<div class="empty"><i class="ti ti-clipboard-list"></i>Aucun relevé dans l'équipe.</div>';return;}
+    // Métriques
+    const totalML=allReleves.reduce((s,r)=>s+(r.total||0),0);
+    metricsEl.innerHTML=`
+      <div class="metric"><div class="metric-label">Relevés équipe</div><div class="metric-value">${allReleves.length}</div><div class="metric-sub">${teamProfiles.length} commercial${teamProfiles.length>1?'s':''}</div></div>
+      <div class="metric"><div class="metric-label">Linéaire total</div><div class="metric-value">${totalML.toFixed(2)}<span style="font-size:14px;font-weight:400"> m</span></div><div class="metric-sub">tous relevés confondus</div></div>`;
+    // Liste des relevés par commercial
+    el.innerHTML=teamProfiles.map(p=>{
+      const pReleves=allReleves.filter(r=>r.user_id===p.id).sort((a,b)=>new Date(b.date)-new Date(a.date));
+      if(!pReleves.length)return'';
+      return`<div style="margin-bottom:16px">
+        <div class="section-label" style="margin-top:0">${p.prenom} ${p.nom} — ${pReleves.length} relevé${pReleves.length>1?'s':''}</div>
+        ${pReleves.map(r=>`
+          <div class="releve-card" style="cursor:pointer" onclick="showReleve('${r.id}','equipe')">
+            ${getEnseigneAvatar(r.enseigne,40)}
+            <div class="releve-info">
+              <div class="releve-name">${r.enseigne} — ${r.magasin}</div>
+              <div class="releve-sub">${r.date}${r.centrale?' · '+r.centrale:''} · <strong>${(r.total||0).toFixed(2)}m</strong></div>
+            </div>
+            <i class="ti ti-chevron-right" style="color:var(--text3);font-size:18px"></i>
+          </div>`).join('')}
+      </div>`;
+    }).join('');
+  }catch(e){el.innerHTML='<div class="empty">Erreur de chargement.</div>';}
+}
 
 // LOGOS
 const LOGOS={'Intermarché Super':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Intermarch%C3%A9_logo_.svg.png','Intermarché Hyper':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Intermarch%C3%A9_logo_.svg.png','Carrefour':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Logo_Carrefour.svg.png','Carrefour Market':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/logo_carrefour_market.png','Leclerc':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Leclerc_logo.svg.webp','Auchan':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Logo_Auchan_.svg.png','Super U':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/U_commer%C3%A7ants_logo.svg.png','Hyper U':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/U_commer%C3%A7ants_logo.svg.png'};
@@ -858,7 +913,9 @@ function showReleve(id,from){
 }
 
 function goBackFromResults(){
-  if(resultFrom==='enseigne')showScreen('screen-enseigne');else showScreen('screen-home');
+  if(resultFrom==='enseigne')showScreen('screen-enseigne');
+  else if(resultFrom==='equipe'){showScreen('screen-home');setTimeout(()=>{document.querySelectorAll('.tab4')[1].click();},100);}
+  else showScreen('screen-home');
 }
 
 // PIE
