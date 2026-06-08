@@ -439,7 +439,7 @@ async function renderEquipe(){
     // Métriques
     const totalML=allReleves.reduce((s,r)=>s+(r.total||0),0);
     metricsEl.innerHTML=`
-      <div class="metric"><div class="metric-label">Relevés équipe</div><div class="metric-value">${allReleves.length}</div><div class="metric-sub">${teamProfiles.length} commercial${teamProfiles.length>1?'s':''}</div></div>
+      <div class="metric"><div class="metric-label">Relevés équipe</div><div class="metric-value">${allReleves.length}</div><div class="metric-sub">${teamProfiles.length>1?teamProfiles.length+' commerciaux':teamProfiles.length+' commercial'}</div></div>
       <div class="metric"><div class="metric-label">Linéaire total</div><div class="metric-value">${totalML.toFixed(2)}<span style="font-size:14px;font-weight:400"> m</span></div><div class="metric-sub">tous relevés confondus</div></div>`;
     // Liste des relevés par commercial
     el.innerHTML=teamProfiles.map(p=>{
