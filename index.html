@@ -1181,7 +1181,7 @@ async function calcResults(){
   resultFrom='home';renderResults(currentReleve);showScreen('screen-results');
   setSyncStatus('syncing','Sauvegarde…');
   try{
-    const payload={id:currentReleve.id,enseigne:currentReleve.enseigne,magasin:currentReleve.magasin,magasin_id:currentReleve.magasin_id||null,centrale:currentReleve.centrale||null,type:currentReleve.type,typologie:currentReleve.typologie||null,date:currentReleve.date,total:currentReleve.total,facings:currentReleve.facings,results:currentReleve.results,user_id:currentUser.id,notes:currentReleve.notes||null,commentaire:currentReleve.commentaire||null,client_vu:currentReleve.client_vu||null,actions_menees:currentReleve.actions_menees||null};
+    const payload={id:currentReleve.id,enseigne:currentReleve.enseigne,magasin:currentReleve.magasin,magasin_id:currentReleve.magasin_id||null,centrale:currentReleve.centrale||null,type:currentReleve.type,typologie_magasin:currentReleve.typologie||null,date:currentReleve.date,total:currentReleve.total,facings:currentReleve.facings,results:currentReleve.results,user_id:currentUser.id,notes:currentReleve.notes||null,commentaire:currentReleve.commentaire||null,client_vu:currentReleve.client_vu||null,actions_menees:currentReleve.actions_menees||null};
     const{error}=await sb.from('releves').upsert([payload]);
     if(error)throw error;setSyncStatus('ok','Synchronisé');
   }catch(e){setSyncStatus('error','Erreur sync');}
