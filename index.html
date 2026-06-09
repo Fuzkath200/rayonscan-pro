@@ -483,7 +483,7 @@ function renderReleves(){
       ${getEnseigneAvatar(r.enseigne,40)}
       <div class="releve-info" onclick="showReleve('${r.id}','home')">
         <div class="releve-name">${r.enseigne} — ${r.magasin}</div>
-        <div class="releve-sub">${r.date}${r.centrale?' · '+r.centrale:''} · <strong>${(r.total||0).toFixed(2)}m</strong> · ${(r.results||[]).length} réf.</div>
+        <div class="releve-sub">${r.date}${r.centrale?' · '+r.centrale:''}${r.typologie?' · '+r.typologie:''} · <strong>${(r.total||0).toFixed(2)}m</strong> · ${(r.results||[]).length} réf.</div>
       </div>
       <div class="releve-actions">
         <button class="icon-btn" onclick="openEditReleve('${r.id}')" aria-label="Modifier"><i class="ti ti-edit"></i></button>
@@ -511,6 +511,7 @@ function openEditReleve(id){
   document.getElementById('r-magasin').value=r.magasin;
   document.getElementById('r-type').value=r.type;
   document.getElementById('r-date').value=r.date;
+  setTimeout(()=>{if(document.getElementById('r-typologie'))document.getElementById('r-typologie').value=r.typologie||'';},50);
   showScreen('screen-new-releve');
 }
 
@@ -562,7 +563,7 @@ function renderCatalogue(){
       <div class="dot" style="background:${COLORS[i%COLORS.length]}"></div>
       <div class="product-info">
         <div class="product-name">${p.marque}</div>
-        <div class="product-sub">${p.ref} · <strong>${p.longueur||p.largeur}cm</strong>${p.segment?' · '+p.segment:''}${p.prix_conseille?' · '+p.prix_conseille.toFixed(2)+'€':''}</div>
+        <div class="product-sub">${p.ref} · <strong>${p.longueur||p.largeur}cm</strong>${p.segment?' · '+p.segment:''}${p.type_marque?' · '+p.type_marque:''}${p.prix_conseille?' · '+p.prix_conseille.toFixed(2)+'€':''}</div>
         <div style="margin-top:4px">${pCentrales}</div>
       </div>
       <div class="product-actions">
@@ -714,6 +715,27 @@ function openModal(type,id){
             ${['TCA','TCM','TCR','TC Grappe','TC Orange','TC Jaune','Cocktail','Autre'].map(s=>`<option value="${s}"${p&&p.segment===s?' selected':''}>${s}</option>`).join('')}
           </select>
         </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Type de marque</label>
+          <select id="mod-type-marque">
+            ${['MN','MDD','NO NAME'].map(s=>`<option value="${s}"${p&&p.type_marque===s?' selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Drive</label>
+          <select id="mod-drive">
+            <option value="Drive"${!p||p.drive==='Drive'?' selected':''}>Drive</option>
+            <option value="Pas Drive"${p&&p.drive==='Pas Drive'?' selected':''}>Pas Drive</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label>Origine</label>
+        <select id="mod-origine">
+          ${['origine FRANCE','origine MAROC','origine DAKHLA OUED ED DAHAB','origine ESPAGNE','origine AUTRES','origine ITALIE','origine PAYS BAS','origine TUNISIE','origine EGYPTE'].map(s=>`<option value="${s}"${p&&p.origine===s?' selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>
         <div class="form-group"><label>Prix conseille (€)</label><input type="number" id="mod-prix" value="${p&&p.prix_conseille?p.prix_conseille:''}" placeholder="2.99" step="0.01" min="0"></div>
       </div>
       <div class="form-group"><label>Notes</label><input type="text" id="mod-notes" value="${p?p.notes:''}" placeholder="Barquette..."></div>
@@ -759,7 +781,7 @@ async function saveModal(){
     const longueur=parseFloat(document.getElementById('mod-longueur').value);
     if(!marque||!ref||!longueur){alert('Marque, référence et longueur sont obligatoires.');return;}
     const selectedC=[...document.querySelectorAll('#centrales-picker .centrale-tag.selected')].map(el=>el.getAttribute('data-id')).filter(Boolean);
-    const obj={marque,ref,type:document.getElementById('mod-type').value,longueur,hauteur:parseFloat(document.getElementById('mod-hauteur').value)||0,poids:document.getElementById('mod-poids').value.trim(),poids_type:document.getElementById('mod-poids-type').value,segment:document.getElementById('mod-segment').value,prix_conseille:parseFloat(document.getElementById('mod-prix').value)||null,notes:document.getElementById('mod-notes').value.trim(),centrales:selectedC};
+    const obj={marque,ref,type:document.getElementById('mod-type').value,longueur,hauteur:parseFloat(document.getElementById('mod-hauteur').value)||0,poids:document.getElementById('mod-poids').value.trim(),poids_type:document.getElementById('mod-poids-type').value,segment:document.getElementById('mod-segment').value,type_marque:document.getElementById('mod-type-marque').value,drive:document.getElementById('mod-drive').value,origine:document.getElementById('mod-origine').value,prix_conseille:parseFloat(document.getElementById('mod-prix').value)||null,notes:document.getElementById('mod-notes').value.trim(),centrales:selectedC};
     if(type==='edit-product'){
       const idx=products.findIndex(x=>x.id===id);if(idx>-1)products[idx]={...products[idx],...obj};
       saveLocal();closeModal();renderCatalogue();
@@ -831,12 +853,12 @@ function startFacings(){
   if(!enseigne||!magasin){alert('Choisir une enseigne et saisir le magasin.');return;}
   const today=new Date().toLocaleDateString('fr-FR');
   if(!editingReleve){
-    currentReleve={id:'r'+Date.now(),enseigne,magasin,centrale,type:document.getElementById('r-type').value,date:document.getElementById('r-date').value.trim()||today,facings:{},total:0,results:[]};
+    currentReleve={id:'r'+Date.now(),enseigne,magasin,centrale,type:document.getElementById('r-type').value,typologie:document.getElementById('r-typologie').value,date:document.getElementById('r-date').value.trim()||today,facings:{},total:0,results:[]};
     facings={};products.forEach(p=>{facings[p.id]={pid:p.id,count:0};});
     clearPhoto();
   } else {
     currentReleve.enseigne=enseigne;currentReleve.magasin=magasin;currentReleve.centrale=centrale;
-    currentReleve.type=document.getElementById('r-type').value;currentReleve.date=document.getElementById('r-date').value.trim()||today;
+    currentReleve.type=document.getElementById('r-type').value;currentReleve.typologie=document.getElementById('r-typologie').value;currentReleve.date=document.getElementById('r-date').value.trim()||today;
     facings={};products.forEach(p=>{facings[p.id]={pid:p.id,count:0};});
     (currentReleve.results||[]).forEach(r=>{if(facings[r.pid])facings[r.pid].count=r.count;});
     const localPhotos=localStorage.getItem('rsp_photos_'+currentReleve.id);
@@ -899,9 +921,10 @@ function renderFacings(prods){
         </select>
         <input type="text" id="fdc-${p.id}" value="${fd.date_cond||''}" placeholder="Date cond." 
           style="width:90px;font-size:11px;padding:4px 6px;border:0.5px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text)">
-        <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:3px;cursor:pointer">
-          <input type="checkbox" id="fst-${p.id}" ${fd.sticker?' checked':''}> Sticker
-        </label>
+        <select id="fru-${p.id}" style="font-size:11px;padding:4px 6px;border:0.5px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text)">
+          <option value="non"${fd.rupture==='non'||!fd.rupture?' selected':''}>Rupture: Non</option>
+          <option value="oui"${fd.rupture==='oui'?' selected':''}>Rupture: Oui</option>
+        </select>
       </div>
     </div>`;
   }).join('');
@@ -939,7 +962,8 @@ async function calcResults(){
     if(qEl)facings[p.id].qualite=qEl.value;
     if(prEl)facings[p.id].promo=prEl.value;
     if(dcEl)facings[p.id].date_cond=dcEl.value;
-    if(stEl)facings[p.id].sticker=stEl.checked;
+    const ruEl=document.getElementById('fru-'+p.id);
+    if(ruEl)facings[p.id].rupture=ruEl.value;
   });
   const lines=Object.values(facings).filter(f=>f.count>0).map(f=>{
     const p=products.find(x=>x.id===f.pid);const lon=p?(p.longueur||p.largeur||0):0;
@@ -968,7 +992,7 @@ async function calcResults(){
   resultFrom='home';renderResults(currentReleve);showScreen('screen-results');
   setSyncStatus('syncing','Sauvegarde…');
   try{
-    const payload={id:currentReleve.id,enseigne:currentReleve.enseigne,magasin:currentReleve.magasin,centrale:currentReleve.centrale||null,type:currentReleve.type,date:currentReleve.date,total:currentReleve.total,facings:currentReleve.facings,results:currentReleve.results,user_id:currentUser.id};
+    const payload={id:currentReleve.id,enseigne:currentReleve.enseigne,magasin:currentReleve.magasin,centrale:currentReleve.centrale||null,type:currentReleve.type,typologie:currentReleve.typologie||null,date:currentReleve.date,total:currentReleve.total,facings:currentReleve.facings,results:currentReleve.results,user_id:currentUser.id};
     const{error}=await sb.from('releves').upsert([payload]);
     if(error)throw error;setSyncStatus('ok','Synchronisé');
   }catch(e){setSyncStatus('error','Erreur sync');}
@@ -1025,7 +1049,7 @@ function renderResults(r){
       <div class="dot" style="background:${COLORS[i%COLORS.length]}"></div>
       <div class="result-info">
         <div class="result-name">${l.p.marque}${badge}</div>
-        <div class="result-sub">${l.p.ref} · ${l.count} facing${l.count>1?'s':''}${l.prix_constate?' · '+l.prix_constate.toFixed(2)+'€':''}${l.prix_kg?' · '+l.prix_kg.toFixed(2)+'€/kg':''}${l.qualite==='green'?' 🟢':l.qualite==='orange'?' 🟠':l.qualite==='red'?' 🔴':''}${l.promo==='oui'?' 🏷️':''}</div>
+        <div class="result-sub">${l.p.ref} · ${l.count} facing${l.count>1?'s':''}${l.prix_constate?' · '+l.prix_constate.toFixed(2)+'€':''}${l.prix_kg?' · '+l.prix_kg.toFixed(2)+'€/kg':''}${l.qualite==='green'?' 🟢':l.qualite==='orange'?' 🟠':l.qualite==='red'?' 🔴':''}${l.promo==='oui'?' 🏷️':''}${l.rupture==='oui'?' ⚠️ Rupture':''}</div>
       </div>
       <div class="bar-wrap"><div class="bar-fill" style="width:${(l.ml/maxML*100).toFixed(1)}%;background:${COLORS[i%COLORS.length]}"></div></div>
       <div class="result-pct">${pct.toFixed(1)}%</div>
