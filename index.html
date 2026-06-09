@@ -568,7 +568,7 @@ function desktopTab(tab){
 function renderRelevesDesktop(){
   const el = document.querySelector('#desktop-content #releve-list');
   if(!el) return;
-  if(!releves.length){el.innerHTML='<div class="empty"><i class="ti ti-clipboard-list"></i>Aucun relevé pour l'instant.</div>';return;}
+  if(!releves.length){el.innerHTML='<div class="empty"><i class="ti ti-clipboard-list"></i>Aucun relevé pour l\'instant.</div>';return;}
   el.innerHTML = releves.slice().reverse().map(r=>`
     <div class="releve-card" style="cursor:pointer">
       ${getEnseigneAvatar(r.enseigne,40)}
