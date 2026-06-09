@@ -170,8 +170,15 @@ canvas{display:block;margin:0 auto}
   }
   .desktop-topbar h2{font-size:18px;font-weight:500;flex:1;color:var(--text)}
   .desktop-content{padding:24px 28px 60px;flex:1}
-  #desktop-screen-wrapper>.screen{display:flex !important;flex-direction:column;padding:0 !important;width:100%}
-  #desktop-screen-wrapper .screen{display:flex !important;flex-direction:column;padding:0 !important;width:100%}
+  /* Écran affiché en mode desktop (reste dans la shell, rendu visible via classe) */
+  .desktop-visible{
+    display:flex !important;flex-direction:column;
+    position:fixed;top:0;left:220px;right:0;bottom:0;
+    overflow-y:auto;background:var(--bg2);
+    padding:24px 28px 60px !important;
+    z-index:25
+  }
+  .desktop-visible>.topbar{display:none !important}
 
   /* Cache les éléments mobile */
   .shell > .screen{display:none !important}
@@ -780,38 +787,28 @@ function desktopEditReleve(id){
 }
 
 function desktopShowScreen(screenId){
-  // En desktop, on affiche l'écran en le rendant visible dans desktop-content
-  // via une div wrapper qui contient le contenu sans déplacer le vrai élément
   const src = document.getElementById(screenId);
   if(!src) return;
+  // Vider desktop-content
   const dc = document.getElementById('desktop-content');
-  // Vider desktop-content des wrappers précédents (pas les écrans déplacés)
   dc.innerHTML = '';
-  // Créer un wrapper et y copier visuellement le contenu
-  const wrapper = document.createElement('div');
-  wrapper.id = 'desktop-screen-wrapper';
-  wrapper.style.cssText = 'display:flex;flex-direction:column;width:100%';
-  // Cacher la topbar mobile
-  src.querySelectorAll('.topbar').forEach(tb=>tb.style.display='none');
-  // Déplacer l'écran dans le wrapper
-  src.style.display = 'flex';
-  src.style.flexDirection = 'column';
-  src.style.padding = '0';
-  src.classList.remove('active');
-  wrapper.appendChild(src);
-  dc.appendChild(wrapper);
+  // Cacher topbar interne
+  src.querySelectorAll('.topbar').forEach(tb=>tb.setAttribute('data-desktop-hidden','1'));
+  src.querySelectorAll('[data-desktop-hidden]').forEach(tb=>tb.style.display='none');
+  // Ajouter classe desktop-visible qui force l'affichage
+  src.classList.add('desktop-visible');
   desktopCurrentScreen = screenId;
 }
 
 function desktopRestoreScreen(screenId){
-  // Remettre l'écran dans la shell mobile
   const src = document.getElementById(screenId);
   if(!src) return;
-  const shell = document.querySelector('.shell');
-  shell.appendChild(src);
-  src.style.display = '';
-  src.style.padding = '';
-  src.querySelectorAll('.topbar').forEach(tb=>tb.style.display='');
+  src.classList.remove('desktop-visible');
+  src.querySelectorAll('[data-desktop-hidden]').forEach(tb=>{
+    tb.style.display='';
+    tb.removeAttribute('data-desktop-hidden');
+  });
+  desktopCurrentScreen = null;
 }
 
 let desktopCurrentScreen = null;
