@@ -556,7 +556,15 @@ function filterMagasins(val){
   const dd=document.getElementById('magasin-dropdown');
   if(!val||val.length<2){dd.style.display='none';return;}
   const q=val.toLowerCase();
-  const matches=magasins.filter(m=>(m.ville&&m.ville.toLowerCase().includes(q))||(m.groupe_enseigne&&m.groupe_enseigne.toLowerCase().includes(q))).slice(0,8);
+  const enseigneSelectionnee=document.getElementById('r-enseigne').value;
+  const enseigneFilterMap={'Intermarch\u00e9 Super':'INTERMARCHE','Intermarch\u00e9 Hyper':'INTERMARCHE','Carrefour':'CARREFOUR','Carrefour Market':'CARREFOUR','Leclerc':'LECLERC','Auchan':'AUCHAN','Super U':'SUPER U','Hyper U':'HYPER U'};
+  const enseigneKey=enseigneSelectionnee?(enseigneFilterMap[enseigneSelectionnee]||null):null;
+  const matches=magasins.filter(m=>{
+    const textMatch=(m.ville&&m.ville.toLowerCase().includes(q))||(m.groupe_enseigne&&m.groupe_enseigne.toLowerCase().includes(q));
+    if(!textMatch)return false;
+    if(enseigneKey&&m.groupe_enseigne&&!m.groupe_enseigne.toUpperCase().includes(enseigneKey))return false;
+    return true;
+  }).slice(0,8);
   if(!matches.length){dd.style.display='none';return;}
   dd.innerHTML=matches.map(m=>`<div onclick="selectMagasin('${m.id}')" style="padding:10px 12px;cursor:pointer;border-bottom:0.5px solid var(--border);font-size:13px" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
     <strong>${m.groupe_enseigne}</strong> — ${m.ville}
@@ -586,8 +594,8 @@ function selectMagasin(id){
     data.innerHTML=`
       <div><div style="font-size:10px;color:var(--text3)">CA Légumes H+E</div><div style="font-size:13px;font-weight:500">${fmt(m.ca_legumes)}</div></div>
       <div><div style="font-size:10px;color:var(--text3)">CA Petits Fruits H+E</div><div style="font-size:13px;font-weight:500">${fmt(m.ca_petits_fruits)}</div></div>
-      <div><div style="font-size:10px;color:var(--text3)">CA TF Hiver</div><div style="font-size:13px;font-weight:500">${fmt(m.ca_tf_hiver)}</div></div>
-      <div><div style="font-size:10px;color:var(--text3)">CA TF Eté</div><div style="font-size:13px;font-weight:500">${fmt(m.ca_tf_ete)}</div></div>`;
+      <div><div style="font-size:10px;color:var(--text3)">CA PF Hiver</div><div style="font-size:13px;font-weight:500">${fmt(m.ca_tf_hiver)}</div></div>
+      <div><div style="font-size:10px;color:var(--text3)">CA PF Eté</div><div style="font-size:13px;font-weight:500">${fmt(m.ca_tf_ete)}</div></div>`;
   } else box.style.display='none';
   // Stocker l'id magasin pour le relevé
   document.getElementById('r-magasin').dataset.magasinId=id;
