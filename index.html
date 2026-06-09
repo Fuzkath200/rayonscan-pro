@@ -1241,7 +1241,12 @@ function renderResults(r){
       ${r.commentaire?`<div style="font-size:13px;color:var(--text2);font-style:italic">"${r.commentaire}"</div>`:''}
     </div>`;
   }
-  document.getElementById('result-list').insertAdjacentHTML('beforebegin',visiteHtml);
+  const existingVisite=document.getElementById('visite-info-block');
+  if(existingVisite)existingVisite.remove();
+  const visiteDiv=document.createElement('div');
+  visiteDiv.id='visite-info-block';
+  visiteDiv.innerHTML=visiteHtml;
+  document.getElementById('result-list').insertAdjacentElement('beforebegin',visiteDiv);
   document.getElementById('result-list').innerHTML=lines.map((l,i)=>{
     const pct=total>0?(l.ml/total)*100:0;
     const badge=l.ml===maxML?'<span class="badge badge-leader">leader</span>':pct<5?'<span class="badge badge-low">faible</span>':'';
