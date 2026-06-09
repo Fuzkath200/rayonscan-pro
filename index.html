@@ -562,7 +562,7 @@ function renderCatalogue(){
       <div class="dot" style="background:${COLORS[i%COLORS.length]}"></div>
       <div class="product-info">
         <div class="product-name">${p.marque}</div>
-        <div class="product-sub">${p.ref} · <strong>${p.longueur||p.largeur}cm</strong></div>
+        <div class="product-sub">${p.ref} · <strong>${p.longueur||p.largeur}cm</strong>${p.segment?' · '+p.segment:''}${p.prix_conseille?' · '+p.prix_conseille.toFixed(2)+'€':''}</div>
         <div style="margin-top:4px">${pCentrales}</div>
       </div>
       <div class="product-actions">
@@ -700,9 +700,23 @@ function openModal(type,id){
         <div class="form-group"><label>Hauteur (cm)</label><input type="number" id="mod-hauteur" value="${p&&p.hauteur?p.hauteur:''}" placeholder="12" step="0.5"></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Poids</label><input type="text" id="mod-poids" value="${p?p.poids:''}" placeholder="400g"></div>
-        <div class="form-group"><label>Notes</label><input type="text" id="mod-notes" value="${p?p.notes:''}" placeholder="Barquette..."></div>
+        <div class="form-group"><label>Poids / Format</label><input type="text" id="mod-poids" value="${p?p.poids:''}" placeholder="400g"></div>
+        <div class="form-group"><label>Type de poids</label>
+          <select id="mod-poids-type">
+            <option value="Poids fixe"${p&&p.poids_type==='Poids fixe'?' selected':''}>Poids fixe</option>
+            <option value="Poids variable"${p&&p.poids_type==='Poids variable'?' selected':''}>Poids variable</option>
+          </select>
+        </div>
       </div>
+      <div class="form-row">
+        <div class="form-group"><label>Segment</label>
+          <select id="mod-segment">
+            ${['TCA','TCM','TCR','TC Grappe','TC Orange','TC Jaune','Cocktail','Autre'].map(s=>`<option value="${s}"${p&&p.segment===s?' selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Prix conseille (€)</label><input type="number" id="mod-prix" value="${p&&p.prix_conseille?p.prix_conseille:''}" placeholder="2.99" step="0.01" min="0"></div>
+      </div>
+      <div class="form-group"><label>Notes</label><input type="text" id="mod-notes" value="${p?p.notes:''}" placeholder="Barquette..."></div>
       <div class="form-group">
         <label>Centrales disponibles <span style="font-size:11px;color:var(--text3)">(laisser vide = toutes enseignes)</span></label>
         <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px" id="centrales-picker">${centralesOptions}</div>
@@ -745,7 +759,7 @@ async function saveModal(){
     const longueur=parseFloat(document.getElementById('mod-longueur').value);
     if(!marque||!ref||!longueur){alert('Marque, référence et longueur sont obligatoires.');return;}
     const selectedC=[...document.querySelectorAll('#centrales-picker .centrale-tag.selected')].map(el=>el.getAttribute('data-id')).filter(Boolean);
-    const obj={marque,ref,type:document.getElementById('mod-type').value,longueur,hauteur:parseFloat(document.getElementById('mod-hauteur').value)||0,poids:document.getElementById('mod-poids').value.trim(),notes:document.getElementById('mod-notes').value.trim(),centrales:selectedC};
+    const obj={marque,ref,type:document.getElementById('mod-type').value,longueur,hauteur:parseFloat(document.getElementById('mod-hauteur').value)||0,poids:document.getElementById('mod-poids').value.trim(),poids_type:document.getElementById('mod-poids-type').value,segment:document.getElementById('mod-segment').value,prix_conseille:parseFloat(document.getElementById('mod-prix').value)||null,notes:document.getElementById('mod-notes').value.trim(),centrales:selectedC};
     if(type==='edit-product'){
       const idx=products.findIndex(x=>x.id===id);if(idx>-1)products[idx]={...products[idx],...obj};
       saveLocal();closeModal();renderCatalogue();
@@ -846,17 +860,61 @@ function renderFacings(prods){
   el.innerHTML=prods.map((p,i)=>{
     const lon=p.longueur||p.largeur||0;
     const c=facings[p.id]?facings[p.id].count:0;
-    return`<div class="facing-row">
-      <div class="dot" style="background:${COLORS[i%COLORS.length]}"></div>
-      <div class="facing-info"><div class="facing-name">${p.marque}</div><div class="facing-sub">${p.ref} · ${lon}cm</div></div>
-      <div class="facing-ctrl">
-        <button class="ctrl-btn" onclick="chgFacing('${p.id}',-1)">−</button>
-        <span class="facing-count" id="fc-${p.id}">${c}</span>
-        <button class="ctrl-btn" onclick="chgFacing('${p.id}',1)">+</button>
+    const fd=facings[p.id]||{pid:p.id,count:0};
+    const prixInit=fd.prix_constate!=null?fd.prix_constate:(p.prix_conseille||'');
+    const prixKg=prixInit&&p.longueur?(prixInit/(parseFloat(p.poids)||p.longueur*10)*1000).toFixed(2):'—';
+    return`<div class="facing-row" style="flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:10px;width:100%">
+        <div class="dot" style="background:${COLORS[i%COLORS.length]}"></div>
+        <div class="facing-info">
+          <div class="facing-name">${p.marque}</div>
+          <div class="facing-sub">${p.ref} · ${lon}cm${p.segment?' · '+p.segment:''}</div>
+        </div>
+        <div class="facing-ctrl">
+          <button class="ctrl-btn" onclick="chgFacing('${p.id}',-1)">−</button>
+          <span class="facing-count" id="fc-${p.id}">${c}</span>
+          <button class="ctrl-btn" onclick="chgFacing('${p.id}',1)">+</button>
+        </div>
+        <div class="facing-ml" id="fm-${p.id}">${c>0?(c*(lon/100)).toFixed(2)+'m':'—'}</div>
       </div>
-      <div class="facing-ml" id="fm-${p.id}">${c>0?(c*(lon/100)).toFixed(2)+'m':'—'}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;padding:6px 0 4px 19px;width:100%">
+        <div style="display:flex;align-items:center;gap:4px">
+          <span style="font-size:11px;color:var(--text2)">Prix€</span>
+          <input type="number" id="fp-${p.id}" value="${prixInit}" placeholder="${p.prix_conseille||'0.00'}" step="0.01" min="0"
+            style="width:60px;padding:4px 6px;font-size:12px;border:0.5px solid var(--border2);border-radius:6px;background:var(--bg)"
+            oninput="updatePrixKg('${p.id}',${p.longueur||0},'${p.poids||''}')">
+        </div>
+        <div style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:3px">
+          <span>€/kg:</span><span id="fkg-${p.id}" style="font-weight:500;color:var(--text)">${prixKg}</span>
+        </div>
+        <select id="fq-${p.id}" style="font-size:11px;padding:4px 6px;border:0.5px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text)">
+          <option value="">Qualite expo</option>
+          <option value="green"${fd.qualite==='green'?' selected':''}>🟢 Bonne</option>
+          <option value="orange"${fd.qualite==='orange'?' selected':''}>🟠 Moyenne</option>
+          <option value="red"${fd.qualite==='red'?' selected':''}>🔴 Mauvaise</option>
+        </select>
+        <select id="fpr-${p.id}" style="font-size:11px;padding:4px 6px;border:0.5px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text)">
+          <option value="non"${fd.promo==='non'||!fd.promo?' selected':''}>Promo: Non</option>
+          <option value="oui"${fd.promo==='oui'?' selected':''}>Promo: Oui</option>
+        </select>
+        <input type="text" id="fdc-${p.id}" value="${fd.date_cond||''}" placeholder="Date cond." 
+          style="width:90px;font-size:11px;padding:4px 6px;border:0.5px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text)">
+        <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:3px;cursor:pointer">
+          <input type="checkbox" id="fst-${p.id}" ${fd.sticker?' checked':''}> Sticker
+        </label>
+      </div>
     </div>`;
   }).join('');
+}
+
+function updatePrixKg(pid,longueur,poids){
+  const prixEl=document.getElementById('fp-'+pid);
+  const kgEl=document.getElementById('fkg-'+pid);
+  if(!prixEl||!kgEl)return;
+  const prix=parseFloat(prixEl.value);
+  const grammage=parseFloat(poids)||longueur*10;
+  if(prix&&grammage){kgEl.textContent=(prix/(grammage/1000)).toFixed(2);}
+  else kgEl.textContent='—';
 }
 
 function chgFacing(pid,delta){
@@ -869,9 +927,25 @@ function chgFacing(pid,delta){
 }
 
 async function calcResults(){
+  // Collecte les donnees extra par facing
+  products.forEach(p=>{
+    if(!facings[p.id])return;
+    const pEl=document.getElementById('fp-'+p.id);
+    const qEl=document.getElementById('fq-'+p.id);
+    const prEl=document.getElementById('fpr-'+p.id);
+    const dcEl=document.getElementById('fdc-'+p.id);
+    const stEl=document.getElementById('fst-'+p.id);
+    if(pEl)facings[p.id].prix_constate=parseFloat(pEl.value)||null;
+    if(qEl)facings[p.id].qualite=qEl.value;
+    if(prEl)facings[p.id].promo=prEl.value;
+    if(dcEl)facings[p.id].date_cond=dcEl.value;
+    if(stEl)facings[p.id].sticker=stEl.checked;
+  });
   const lines=Object.values(facings).filter(f=>f.count>0).map(f=>{
     const p=products.find(x=>x.id===f.pid);const lon=p?(p.longueur||p.largeur||0):0;
-    return{...f,p,ml:f.count*(lon/100)};
+    const grammage=parseFloat(p.poids)||lon*10;
+    const prixKg=f.prix_constate&&grammage?(f.prix_constate/(grammage/1000)):null;
+    return{...f,p,ml:f.count*(lon/100),prix_kg:prixKg};
   }).sort((a,b)=>b.ml-a.ml);
   if(!lines.length){alert('Saisir au moins un facing.');return;}
   const total=lines.reduce((s,l)=>s+l.ml,0);
@@ -949,7 +1023,10 @@ function renderResults(r){
     const badge=l.ml===maxML?'<span class="badge badge-leader">leader</span>':pct<5?'<span class="badge badge-low">faible</span>':'';
     return`<div class="result-row">
       <div class="dot" style="background:${COLORS[i%COLORS.length]}"></div>
-      <div class="result-info"><div class="result-name">${l.p.marque}${badge}</div><div class="result-sub">${l.p.ref} · ${l.count} facing${l.count>1?'s':''}</div></div>
+      <div class="result-info">
+        <div class="result-name">${l.p.marque}${badge}</div>
+        <div class="result-sub">${l.p.ref} · ${l.count} facing${l.count>1?'s':''}${l.prix_constate?' · '+l.prix_constate.toFixed(2)+'€':''}${l.prix_kg?' · '+l.prix_kg.toFixed(2)+'€/kg':''}${l.qualite==='green'?' 🟢':l.qualite==='orange'?' 🟠':l.qualite==='red'?' 🔴':''}${l.promo==='oui'?' 🏷️':''}</div>
+      </div>
       <div class="bar-wrap"><div class="bar-fill" style="width:${(l.ml/maxML*100).toFixed(1)}%;background:${COLORS[i%COLORS.length]}"></div></div>
       <div class="result-pct">${pct.toFixed(1)}%</div>
       <div class="result-ml">${l.ml.toFixed(2)}m</div>
