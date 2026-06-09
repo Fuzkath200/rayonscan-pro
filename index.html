@@ -751,75 +751,51 @@ function desktopFicheClient(magasin, enseigne){
 
 function desktopNewReleve(){
   desktopBackTarget = 'releves';
-  document.getElementById('desktop-back-btn').style.display = '';
   document.getElementById('desktop-topbar-title').textContent = 'Nouveau relevé';
   document.querySelectorAll('.sidebar-nav-item').forEach(el=>el.classList.remove('active'));
   // Init formulaire
   editingReleve = false;
   currentReleve = null;
   facings = {};
-  // Réinitialiser les champs
   const fields = ['r-enseigne','r-centrale','r-magasin','r-type','r-typologie','r-commentaire'];
   fields.forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  const radios = document.querySelectorAll('input[name="client-vu"]');
-  radios.forEach(r=>r.checked=false);
+  document.querySelectorAll('input[name="client-vu"]').forEach(r=>r.checked=false);
   document.querySelectorAll('#actions-picker .centrale-tag').forEach(el=>el.classList.remove('selected'));
-  document.getElementById('r-date').value = new Date().toLocaleDateString('fr-FR');
+  const dateEl=document.getElementById('r-date');
+  if(dateEl)dateEl.value = new Date().toLocaleDateString('fr-FR');
+  document.getElementById('releve-form-title').textContent = 'Nouveau relevé';
   updateCentraleOptions();
-  if(typeof clearMagasinInfo==='function') clearMagasinInfo();
-  // Afficher l'écran dans desktop-content via classe spéciale
-  desktopShowScreen('screen-new-releve');
+  const cbox=document.getElementById('circana-box');
+  if(cbox)cbox.style.display='none';
+  // Affiche l'écran via le routage desktop de showScreen
+  showScreen('screen-new-releve');
 }
 
 function desktopEditReleve(id){
   desktopBackTarget = 'releves';
+  document.getElementById('desktop-back-btn').style.display = '';
+  document.getElementById('desktop-topbar-title').textContent = 'Modifier le relevé';
+  document.querySelectorAll('.sidebar-nav-item').forEach(el=>el.classList.remove('active'));
   openEditReleve(id);
-  if(desktopMode){
-    const content = document.getElementById('desktop-content');
-    const src = document.getElementById('screen-new-releve');
-    setTimeout(()=>{
-      const clone = src.cloneNode(true);
-      clone.querySelector('.topbar')&&clone.querySelector('.topbar').remove();
-      content.innerHTML = clone.innerHTML;
-      document.getElementById('desktop-topbar-title').textContent = 'Modifier le relevé';
-      document.getElementById('desktop-back-btn').style.display = '';
-    },50);
-  }
+  desktopShowScreen('screen-new-releve');
 }
 
 function desktopShowScreen(screenId){
-  // En desktop, on affiche l'écran en le rendant visible dans desktop-content
-  // via une div wrapper qui contient le contenu sans déplacer le vrai élément
+  // Cacher tout autre écran desktop déjà visible
+  document.querySelectorAll('.desktop-visible').forEach(el=>el.classList.remove('desktop-visible'));
   const src = document.getElementById(screenId);
   if(!src) return;
-  const dc = document.getElementById('desktop-content');
-  // Vider desktop-content des wrappers précédents (pas les écrans déplacés)
-  dc.innerHTML = '';
-  // Créer un wrapper et y copier visuellement le contenu
-  const wrapper = document.createElement('div');
-  wrapper.id = 'desktop-screen-wrapper';
-  wrapper.style.cssText = 'display:flex;flex-direction:column;width:100%';
-  // Cacher la topbar mobile
-  src.querySelectorAll('.topbar').forEach(tb=>tb.style.display='none');
-  // Déplacer l'écran dans le wrapper
-  src.style.display = 'flex';
-  src.style.flexDirection = 'column';
-  src.style.padding = '0';
-  src.classList.remove('active');
-  wrapper.appendChild(src);
-  dc.appendChild(wrapper);
+  // Rendre visible via la classe CSS (sans déplacer le DOM)
+  src.classList.add('desktop-visible');
+  src.scrollTop = 0;
   desktopCurrentScreen = screenId;
 }
 
 function desktopRestoreScreen(screenId){
-  // Remettre l'écran dans la shell mobile
   const src = document.getElementById(screenId);
   if(!src) return;
-  const shell = document.querySelector('.shell');
-  shell.appendChild(src);
-  src.style.display = '';
-  src.style.padding = '';
-  src.querySelectorAll('.topbar').forEach(tb=>tb.style.display='');
+  src.classList.remove('desktop-visible');
+  desktopCurrentScreen = null;
 }
 
 let desktopCurrentScreen = null;
@@ -925,10 +901,9 @@ function saveLocal(){
 
 function showScreen(id){
   if(desktopMode){
-    // Si un écran est dans desktop-content, le restaurer
-    if(desktopCurrentScreen){
+    // Restaurer l'écran desktop courant s'il y en a un et qu'on change d'écran
+    if(desktopCurrentScreen && desktopCurrentScreen!==id){
       desktopRestoreScreen(desktopCurrentScreen);
-      desktopCurrentScreen = null;
     }
     if(id==='screen-home'){
       desktopTab(desktopBackTarget||'releves');
@@ -936,8 +911,9 @@ function showScreen(id){
       document.getElementById('desktop-back-btn').style.display='none';
       return;
     }
-    // Pour facings et results, afficher dans desktop-content
-    if(id==='screen-facings'||id==='screen-results'||id==='screen-client'){
+    // Tous les écrans de détail s'affichent via desktop-visible
+    if(id==='screen-new-releve'||id==='screen-facings'||id==='screen-results'||id==='screen-client'){
+      document.getElementById('desktop-back-btn').style.display='';
       desktopShowScreen(id);
       return;
     }
