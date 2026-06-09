@@ -293,6 +293,24 @@ canvas{display:block;margin:0 auto}
 
 </div>
 
+<!-- FICHE CLIENT -->
+<div class="screen" id="screen-client">
+  <div class="topbar">
+    <button class="back-btn" onclick="showScreen('screen-home')"><i class="ti ti-arrow-left" aria-hidden="true"></i></button>
+    <h2 id="client-title">Fiche client</h2>
+    <button class="icon-btn" onclick="openNewReleveFromClient()" aria-label="Nouveau relevé" title="Nouveau relevé"><i class="ti ti-plus"></i></button>
+  </div>
+  <div id="client-header"></div>
+  <div id="client-last-visit"></div>
+  <div class="section-label">Évolution linéaire Azura</div>
+  <canvas id="client-chart" height="120" style="width:100%;margin-bottom:18px"></canvas>
+  <div class="section-label">Références au dernier passage</div>
+  <div class="card" id="client-last-refs"></div>
+  <div class="section-label">Historique des visites</div>
+  <div id="client-history"></div>
+  <div style="height:30px"></div>
+</div>
+
 <!-- MODAL -->
 <div class="modal-overlay" id="modal-overlay">
   <div class="modal" id="modal-content"></div>
@@ -516,6 +534,173 @@ function getEnseigneAvatar(enseigne,size=48){
   return`<div style="width:${size}px;height:${size}px;border-radius:${size*0.25}px;background:${color};display:flex;align-items:center;justify-content:center;color:white;font-size:${size*0.3}px;font-weight:700;flex-shrink:0">${initials}</div>`;
 }
 
+// FICHE CLIENT
+function showFicheClient(magasin, enseigne){
+  // Récupère tous les relevés de ce magasin, triés par date croissante
+  const clientReleves = releves
+    .filter(r => r.magasin === magasin)
+    .sort((a,b) => {
+      const da = a.date.split('/').reverse().join('-');
+      const db = b.date.split('/').reverse().join('-');
+      return da.localeCompare(db);
+    });
+
+  document.getElementById('client-title').textContent = magasin;
+
+  // Infos Circana si dispo
+  const mag = magasins.find(m => (m.groupe_enseigne + ' ' + m.ville) === magasin || m.groupe_enseigne === magasin);
+  const fmt = v => v ? new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(v) : '—';
+  const circanaHtml = mag && (mag.ca_legumes || mag.ca_petits_fruits) ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px">
+      <div><div style="font-size:10px;color:var(--text3)">CA Légumes</div><div style="font-size:13px;font-weight:500">${fmt(mag.ca_legumes)}</div></div>
+      <div><div style="font-size:10px;color:var(--text3)">CA PF H+E</div><div style="font-size:13px;font-weight:500">${fmt(mag.ca_petits_fruits)}</div></div>
+      <div><div style="font-size:10px;color:var(--text3)">CA PF Hiver</div><div style="font-size:13px;font-weight:500">${fmt(mag.ca_tf_hiver)}</div></div>
+      <div><div style="font-size:10px;color:var(--text3)">CA PF Eté</div><div style="font-size:13px;font-weight:500">${fmt(mag.ca_tf_ete)}</div></div>
+    </div>` : '';
+
+  document.getElementById('client-header').innerHTML = `
+    <div style="background:var(--bg3);border-radius:var(--radius-lg);padding:14px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:${circanaHtml?'12':'0'}px">
+        ${getEnseigneAvatar(enseigne,40)}
+        <div>
+          <div style="font-size:15px;font-weight:500">${magasin}</div>
+          <div style="font-size:12px;color:var(--text2)">${enseigne} · ${clientReleves.length} visite${clientReleves.length>1?'s':''}</div>
+        </div>
+      </div>
+      ${circanaHtml}
+    </div>`;
+
+  // Dernière visite
+  if(clientReleves.length) {
+    const last = clientReleves[clientReleves.length - 1];
+    const azuraLines = (last.results||[]).filter(l => {
+      const p = products.find(x=>x.id===l.pid);
+      return p && p.marque && p.marque.toLowerCase().includes('azura');
+    });
+    const azuraML = azuraLines.reduce((s,l)=>s+l.ml,0);
+
+    document.getElementById('client-last-visit').innerHTML = `
+      <div style="background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:16px">
+        <div style="font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px">Dernière visite — ${last.date}</div>
+        ${last.client_vu!=null?`<div style="font-size:13px;margin-bottom:6px">Client vu : <strong style="color:${last.client_vu?'var(--success-text)':'var(--danger-text)'}">${last.client_vu?'Oui':'Non'}</strong></div>`:''}
+        ${last.actions_menees&&last.actions_menees.length?`<div style="font-size:13px;margin-bottom:6px">Actions : ${last.actions_menees.map(a=>`<span class="badge" style="background:var(--info-bg);color:var(--info-text)">${a}</span>`).join(' ')}</div>`:''}
+        ${last.commentaire?`<div style="font-size:13px;color:var(--text2);font-style:italic;margin-bottom:6px">"${last.commentaire}"</div>`:'<div style="font-size:13px;color:var(--text3);font-style:italic;margin-bottom:6px">Aucun commentaire</div>'}
+        <div style="font-size:13px">Linéaire Azura : <strong style="color:var(--accent)">${azuraML.toFixed(2)}m</strong> · Total : <strong>${(last.total||0).toFixed(2)}m</strong></div>
+      </div>`;
+  } else {
+    document.getElementById('client-last-visit').innerHTML = '';
+  }
+
+  // Graphique évolution linéaire Azura
+  const canvas = document.getElementById('client-chart');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth || 400;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  const chartData = clientReleves.map(r => {
+    const azuraML = (r.results||[]).filter(l=>{
+      const p=products.find(x=>x.id===l.pid);
+      return p&&p.marque&&p.marque.toLowerCase().includes('azura');
+    }).reduce((s,l)=>s+l.ml,0);
+    return {date: r.date, ml: azuraML, total: r.total||0};
+  });
+
+  if(chartData.length > 1){
+    const W=canvas.width, H=120, pad=30, padR=16;
+    const maxML = Math.max(...chartData.map(d=>d.total), 0.1);
+    const xStep = (W - pad - padR) / (chartData.length - 1);
+
+    // Grille
+    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+    ctx.lineWidth = 1;
+    [0,0.25,0.5,0.75,1].forEach(t=>{
+      const y = H - pad - t*(H-pad-10);
+      ctx.beginPath(); ctx.moveTo(pad,y); ctx.lineTo(W-padR,y); ctx.stroke();
+      ctx.fillStyle='rgba(0,0,0,0.3)';ctx.font='9px system-ui';ctx.textAlign='right';
+      ctx.fillText((maxML*t).toFixed(1)+'m', pad-3, y+3);
+    });
+
+    // Aire total (gris)
+    ctx.beginPath();
+    chartData.forEach((d,i)=>{
+      const x=pad+i*xStep, y=H-pad-(d.total/maxML)*(H-pad-10);
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    });
+    ctx.lineTo(pad+(chartData.length-1)*xStep, H-pad);
+    ctx.lineTo(pad, H-pad);
+    ctx.closePath();
+    ctx.fillStyle='rgba(107,106,100,0.12)';ctx.fill();
+
+    // Ligne Azura (vert)
+    ctx.beginPath();
+    chartData.forEach((d,i)=>{
+      const x=pad+i*xStep, y=H-pad-(d.ml/maxML)*(H-pad-10);
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    });
+    ctx.strokeStyle='#1D9E75';ctx.lineWidth=2.5;ctx.stroke();
+
+    // Points + labels date
+    chartData.forEach((d,i)=>{
+      const x=pad+i*xStep, y=H-pad-(d.ml/maxML)*(H-pad-10);
+      ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);
+      ctx.fillStyle='#1D9E75';ctx.fill();
+      ctx.strokeStyle='white';ctx.lineWidth=1.5;ctx.stroke();
+      if(i===0||i===chartData.length-1||(chartData.length<=6)){
+        ctx.fillStyle='rgba(0,0,0,0.4)';ctx.font='8px system-ui';ctx.textAlign='center';
+        ctx.fillText(d.date.substring(0,5), x, H-2);
+      }
+    });
+
+    // Légende
+    ctx.fillStyle='#1D9E75';ctx.fillRect(pad,8,12,8);
+    ctx.fillStyle='rgba(107,106,100,0.4)';ctx.fillRect(pad+60,8,12,8);
+    ctx.fillStyle='rgba(0,0,0,0.5)';ctx.font='10px system-ui';ctx.textAlign='left';
+    ctx.fillText('Azura', pad+16, 16);
+    ctx.fillText('Total rayon', pad+76, 16);
+  } else if(chartData.length===1){
+    ctx.fillStyle='var(--text3)';ctx.font='13px system-ui';ctx.textAlign='center';
+    ctx.fillText('Une seule visite — le graphique apparaîtra à la 2ème', canvas.width/2, 60);
+  } else {
+    ctx.fillStyle='rgba(0,0,0,0.3)';ctx.font='13px system-ui';ctx.textAlign='center';
+    ctx.fillText('Aucune donnée', canvas.width/2, 60);
+  }
+
+  // Références au dernier passage
+  if(clientReleves.length){
+    const last = clientReleves[clientReleves.length-1];
+    const lines = (last.results||[]).map(l=>({...l,p:products.find(x=>x.id===l.pid)||{marque:'?',ref:'?'}}));
+    document.getElementById('client-last-refs').innerHTML = lines.length ? lines.map((l,i)=>{
+      const isAzura = l.p.marque&&l.p.marque.toLowerCase().includes('azura');
+      return `<div class="result-row" style="${isAzura?'background:rgba(29,158,117,0.06);':''}">
+        <div class="dot" style="background:${isAzura?'#1D9E75':COLORS[i%COLORS.length]}"></div>
+        <div class="result-info">
+          <div class="result-name">${l.p.marque}${isAzura?'<span class="badge badge-leader">Azura</span>':''}</div>
+          <div class="result-sub">${l.p.ref} · ${l.count} facing${l.count>1?'s':''}${l.prix_constate?' · '+l.prix_constate.toFixed(2)+'€':''}</div>
+        </div>
+        <div class="result-ml">${l.ml.toFixed(2)}m</div>
+      </div>`;
+    }).join('') : '<div class="empty" style="padding:1rem">Aucune référence</div>';
+  }
+
+  // Historique des visites
+  document.getElementById('client-history').innerHTML = clientReleves.slice().reverse().map(r=>`
+    <div class="releve-card" style="cursor:pointer" onclick="showReleve('${r.id}','client')">
+      <div class="releve-icon"><i class="ti ti-file-analytics"></i></div>
+      <div class="releve-info">
+        <div class="releve-name">${r.date}${r.centrale?' · '+r.centrale:''}</div>
+        <div class="releve-sub"><strong>${(r.total||0).toFixed(2)}m</strong> · ${(r.results||[]).length} réf.${r.client_vu!=null?' · Client '+( r.client_vu?'vu ✓':'non vu'):''}</div>
+        ${r.commentaire?`<div style="font-size:11px;color:var(--text3);font-style:italic;margin-top:2px">"${r.commentaire.substring(0,60)}${r.commentaire.length>60?'…':''}"</div>`:''}
+      </div>
+      <i class="ti ti-chevron-right" style="color:var(--text3);font-size:18px"></i>
+    </div>`).join('');
+
+  showScreen('screen-client');
+}
+
+function openNewReleveFromClient(){
+  showScreen('screen-new-releve');
+}
+
 // RELEVÉS
 function renderReleves(){
   const el=document.getElementById('releve-list');
@@ -528,6 +713,7 @@ function renderReleves(){
         <div class="releve-sub">${r.date}${r.centrale?' · '+r.centrale:''}${r.typologie?' · '+r.typologie:''} · <strong>${(r.total||0).toFixed(2)}m</strong> · ${(r.results||[]).length} réf.</div>
       </div>
       <div class="releve-actions">
+        <button class="icon-btn" onclick="showFicheClient('${r.magasin}','${r.enseigne}')" aria-label="Fiche client" title="Fiche client"><i class="ti ti-user"></i></button>
         <button class="icon-btn" onclick="openEditReleve('${r.id}')" aria-label="Modifier"><i class="ti ti-edit"></i></button>
         <button class="icon-btn" onclick="openModal('rename','${r.id}')" aria-label="Renommer"><i class="ti ti-pencil"></i></button>
         <button class="icon-btn danger" onclick="deleteReleve('${r.id}')" aria-label="Supprimer"><i class="ti ti-trash"></i></button>
@@ -1202,6 +1388,7 @@ function showReleve(id,from){
 function goBackFromResults(){
   if(resultFrom==='enseigne')showScreen('screen-enseigne');
   else if(resultFrom==='equipe'){showScreen('screen-home');setTimeout(()=>{document.querySelectorAll('.tab4')[1].click();},100);}
+  else if(resultFrom==='client'&&currentReleve){showFicheClient(currentReleve.magasin,currentReleve.enseigne);}
   else showScreen('screen-home');
 }
 
