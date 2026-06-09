@@ -178,7 +178,14 @@ canvas{display:block;margin:0 auto}
     <div class="form-group"><label>Centrale</label>
       <select id="r-centrale"><option value="">-- Toutes (pas de centrale) --</option></select>
     </div>
-    <div class="form-group"><label>Ville / Magasin *</label><input type="text" id="r-magasin" placeholder="ex: Montaren Saint-Médiers"></div>
+    <div class="form-group"><label>Ville / Magasin *</label>
+      <input type="text" id="r-magasin" placeholder="ex: Antibes, Nice..." autocomplete="off" oninput="filterMagasins(this.value)" onfocus="filterMagasins(this.value)">
+      <div id="magasin-dropdown" style="display:none;position:absolute;z-index:50;background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius);max-height:200px;overflow-y:auto;width:calc(100% - 32px);box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+    </div>
+    <div id="circana-box" style="display:none;background:var(--bg3);border-radius:var(--radius);padding:12px;margin-top:-8px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px">Données Circana</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px" id="circana-data"></div>
+    </div>
     <div class="form-row">
       <div class="form-group"><label>Type de rayon</label>
         <select id="r-type"><option>Tomates cerises</option><option>Tomates cocktail</option><option>Fruits & Légumes</option><option>Autre</option></select>
@@ -309,6 +316,7 @@ const DEFAULT_PRODUCTS=[
 let products=[];
 let releves=[];
 let centrales=[];
+let magasins=[];
 let currentReleve=null;
 let facings={};
 let photos=[];
@@ -379,11 +387,12 @@ async function init(){
   if(profRes.data)currentProfile=profRes.data;
   setSyncStatus('syncing','Chargement…');
   try{
-    const [prodRes,relRes]=await Promise.all([sb.from('produits').select('*'),sb.from('releves').select('*')]);
+    const [prodRes,relRes,magRes]=await Promise.all([sb.from('produits').select('*'),sb.from('releves').select('*'),sb.from('magasins').select('*')]);
     centrales=JSON.parse(localStorage.getItem('rsp_centrales')||'null')||JSON.parse(JSON.stringify(DEFAULT_CENTRALES));
     if(prodRes.data&&prodRes.data.length>0){products=prodRes.data.map(p=>({...p,longueur:p.longueur||p.largeur||0,centrales:p.centrales||[]}));}
     else{products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));await sb.from('produits').insert(products.map(p=>({id:p.id,marque:p.marque,ref:p.ref,type:p.type,longueur:p.longueur,hauteur:p.hauteur,poids:p.poids,notes:p.notes,centrales:p.centrales||[]})));}
     releves=relRes.data||[];
+    magasins=magRes.data||[];
     setSyncStatus('ok','Synchronisé');
   // Affiche onglet équipe pour directeur et admin
   if(currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin')){
@@ -542,6 +551,50 @@ function deleteCentrale(id){
   if(!confirm('Supprimer cette centrale ?'))return;
   centrales=centrales.filter(c=>c.id!==id);saveLocal();renderCentrales();
 }
+
+function filterMagasins(val){
+  const dd=document.getElementById('magasin-dropdown');
+  if(!val||val.length<2){dd.style.display='none';return;}
+  const q=val.toLowerCase();
+  const matches=magasins.filter(m=>(m.ville&&m.ville.toLowerCase().includes(q))||(m.groupe_enseigne&&m.groupe_enseigne.toLowerCase().includes(q))).slice(0,8);
+  if(!matches.length){dd.style.display='none';return;}
+  dd.innerHTML=matches.map(m=>`<div onclick="selectMagasin('${m.id}')" style="padding:10px 12px;cursor:pointer;border-bottom:0.5px solid var(--border);font-size:13px" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
+    <strong>${m.groupe_enseigne}</strong> — ${m.ville}
+    <div style="font-size:11px;color:var(--text2)">${m.adresse||''}</div>
+  </div>`).join('');
+  dd.style.display='block';
+}
+
+function selectMagasin(id){
+  const m=magasins.find(x=>x.id===id);if(!m)return;
+  document.getElementById('r-magasin').value=m.groupe_enseigne+' '+m.ville;
+  document.getElementById('magasin-dropdown').style.display='none';
+  // Auto-remplir enseigne si possible
+  const enseigneMap={'CARREFOUR':'Carrefour','CENTRE LECLERC':'Leclerc','AUCHAN':'Auchan','INTERMARCHE':'Intermarché Super','SUPER U':'Super U','HYPER U':'Hyper U','CARREFOUR MARKET':'Carrefour Market'};
+  for(const[k,v] of Object.entries(enseigneMap)){
+    if(m.groupe_enseigne&&m.groupe_enseigne.toUpperCase().includes(k)){
+      document.getElementById('r-enseigne').value=v;
+      updateCentraleOptions();break;
+    }
+  }
+  // Afficher données Circana
+  const box=document.getElementById('circana-box');
+  const data=document.getElementById('circana-data');
+  if(m.ca_legumes||m.ca_petits_fruits){
+    box.style.display='block';
+    const fmt=v=>v?new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(v):'—';
+    data.innerHTML=`
+      <div><div style="font-size:10px;color:var(--text3)">CA Légumes H+E</div><div style="font-size:13px;font-weight:500">${fmt(m.ca_legumes)}</div></div>
+      <div><div style="font-size:10px;color:var(--text3)">CA Petits Fruits H+E</div><div style="font-size:13px;font-weight:500">${fmt(m.ca_petits_fruits)}</div></div>
+      <div><div style="font-size:10px;color:var(--text3)">CA TF Hiver</div><div style="font-size:13px;font-weight:500">${fmt(m.ca_tf_hiver)}</div></div>
+      <div><div style="font-size:10px;color:var(--text3)">CA TF Eté</div><div style="font-size:13px;font-weight:500">${fmt(m.ca_tf_ete)}</div></div>`;
+  } else box.style.display='none';
+  // Stocker l'id magasin pour le relevé
+  document.getElementById('r-magasin').dataset.magasinId=id;
+}
+
+// Fermer dropdown si clic ailleurs
+document.addEventListener('click',e=>{if(!e.target.closest('#magasin-dropdown')&&e.target.id!=='r-magasin'){const dd=document.getElementById('magasin-dropdown');if(dd)dd.style.display='none';}});
 
 function updateCentraleOptions(){
   const enseigne=document.getElementById('r-enseigne').value;
@@ -859,7 +912,8 @@ function startFacings(){
   if(!enseigne||!magasin){alert('Choisir une enseigne et saisir le magasin.');return;}
   const today=new Date().toLocaleDateString('fr-FR');
   if(!editingReleve){
-    currentReleve={id:'r'+Date.now(),enseigne,magasin,centrale,type:document.getElementById('r-type').value,typologie:document.getElementById('r-typologie').value,date:document.getElementById('r-date').value.trim()||today,facings:{},total:0,results:[]};
+    const magasinId=document.getElementById('r-magasin').dataset.magasinId||null;
+    currentReleve={id:'r'+Date.now(),enseigne,magasin,magasin_id:magasinId,centrale,type:document.getElementById('r-type').value,typologie:document.getElementById('r-typologie').value,date:document.getElementById('r-date').value.trim()||today,facings:{},total:0,results:[]};
     facings={};products.forEach(p=>{facings[p.id]={pid:p.id,count:0};});
     clearPhoto();
   } else {
