@@ -268,7 +268,7 @@ canvas{display:block;margin:0 auto}
     <div class="logo-badge"><i class="ti ti-chart-bar" aria-hidden="true"></i></div>
     <h1 style="color:white">RayonScan <span style="color:#1D9E75">Pro</span></h1>
     <div style="display:flex;align-items:center;gap:8px">
-      <div class="sync-bar" id="sync-status" style="color:rgba(255,255,255,0.6)"><div class="sync-dot" id="sync-dot"></div><span id="sync-label">…</span></div>
+      <div class="sync-bar" id="sync-status-mobile" style="color:rgba(255,255,255,0.6)"><div class="sync-dot" id="sync-dot-mobile"></div><span id="sync-label-mobile">…</span></div>
       <button onclick="doLogout()" style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,0.6);font-size:18px;padding:4px;display:flex;align-items:center" title="Déconnexion"><i class="ti ti-logout"></i></button>
     </div>
   </div>
@@ -617,7 +617,7 @@ function renderCatalogueDesktop(){
   }
   if(!filtered.length){el.innerHTML='<div class="empty" style="padding:1.5rem">Aucune référence</div>';return;}
   el.innerHTML=filtered.map((p,i)=>{
-    const pCentrales=p.centrales&&p.centrales.length?p.centrales.map(cid=>{const c=centrales.find(x=>x.id===cid);return c?`<span class="centrale-tag">${c.enseigne} · ${c.nom}</span>`:''}).join(''):'<span style="font-size:11px;color:var(--text3)">Toutes enseignes</span>';
+    const pCentrales=p.centrales&&p.centrales.length?p.centrales.map(cid=>{const c=centrales.find(x=>x.id===cid);return c?`<span class="centrale-tag">${c.enseigne} · ${c.nom}</span>`:''}).join(''):'<span style="font-size:11px;color:var(--danger-text)">Aucune centrale</span>';
     return`<div class="product-row">
       <div class="dot" style="background:${COLORS[i%COLORS.length]}"></div>
       <div class="product-info">
@@ -744,19 +744,29 @@ function desktopNewReleve(){
   document.getElementById('desktop-back-btn').style.display = '';
   document.getElementById('desktop-topbar-title').textContent = 'Nouveau relevé';
   document.querySelectorAll('.sidebar-nav-item').forEach(el=>el.classList.remove('active'));
-  // Montrer l'écran new-releve dans desktop-content
-  const content = document.getElementById('desktop-content');
+  // Vider desktop-content et y déplacer l'écran new-releve
+  const dc = document.getElementById('desktop-content');
+  dc.innerHTML = '';
   const src = document.getElementById('screen-new-releve');
-  // Clone le contenu sans topbar
-  const clone = src.cloneNode(true);
-  clone.querySelector('.topbar') && clone.querySelector('.topbar').remove();
-  content.innerHTML = clone.innerHTML;
-  // Réinitialiser les handlers
-  updateCentraleOptions();
-  document.getElementById('r-date').value = new Date().toLocaleDateString('fr-FR');
+  // Cacher la topbar interne
+  const tb = src.querySelector('.topbar');
+  if(tb) tb.style.display = 'none';
+  src.style.display = 'flex';
+  src.style.padding = '0';
+  dc.appendChild(src);
+  // Init
   editingReleve = false;
   currentReleve = null;
+  facings = {};
   document.getElementById('releve-form-title').textContent = 'Nouveau relevé';
+  document.getElementById('r-enseigne').value = '';
+  document.getElementById('r-centrale').value = '';
+  document.getElementById('r-magasin').value = '';
+  document.getElementById('r-type').value = '';
+  document.getElementById('r-typologie').value = '';
+  document.getElementById('r-date').value = new Date().toLocaleDateString('fr-FR');
+  updateCentraleOptions();
+  clearMagasinInfo();
 }
 
 function desktopEditReleve(id){
@@ -827,12 +837,9 @@ async function doLogout(){
 }
 
 function setSyncStatus(state,label){
-  const dot=document.getElementById('sync-dot');const lbl=document.getElementById('sync-label');
-  if(dot)dot.className='sync-dot'+(state==='syncing'?' syncing':state==='error'?' error':'');
-  if(lbl)lbl.textContent=label;
-  const dotD=document.getElementById('sync-dot-desktop');const lblD=document.getElementById('sync-label-desktop');
-  if(dotD)dotD.className='sync-dot'+(state==='syncing'?' syncing':state==='error'?' error':'');
-  if(lblD)lblD.textContent=label;
+  const cls='sync-dot'+(state==='syncing'?' syncing':state==='error'?' error':'');
+  ['sync-dot','sync-dot-mobile','sync-dot-desktop'].forEach(id=>{const el=document.getElementById(id);if(el)el.className=cls;});
+  ['sync-label','sync-label-mobile','sync-label-desktop'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=label;});
 }
 
 async function init(){
@@ -874,6 +881,18 @@ function saveLocal(){
 }
 
 function showScreen(id){
+  if(desktopMode){
+    // Remettre l'écran à sa place si déplacé dans desktop-content
+    const el=document.getElementById(id);
+    if(el&&el.parentElement&&el.parentElement.id==='desktop-content'){
+      el.style.display='none';
+      el.style.padding='';
+      const tb=el.querySelector('.topbar');
+      if(tb)tb.style.display='';
+      document.querySelector('.shell').appendChild(el);
+    }
+    if(id==='screen-home'){desktopTab(desktopBackTarget||'releves');desktopBackTarget=null;return;}
+  }
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   window.scrollTo(0,0);
@@ -1268,7 +1287,7 @@ function renderCatalogue(){
   }
   if(!filtered.length){el.innerHTML='<div class="empty" style="padding:1.5rem">Aucune référence</div>';return;}
   el.innerHTML=filtered.map((p,i)=>{
-    const pCentrales=p.centrales&&p.centrales.length?p.centrales.map(cid=>{const c=centrales.find(x=>x.id===cid);return c?`<span class="centrale-tag">${c.enseigne} · ${c.nom}</span>`:''}).join(''):'<span style="font-size:11px;color:var(--text3)">Toutes enseignes</span>';
+    const pCentrales=p.centrales&&p.centrales.length?p.centrales.map(cid=>{const c=centrales.find(x=>x.id===cid);return c?`<span class="centrale-tag">${c.enseigne} · ${c.nom}</span>`:''}).join(''):'<span style="font-size:11px;color:var(--danger-text)">Aucune centrale</span>';
     return`<div class="product-row">
       <div class="dot" style="background:${COLORS[i%COLORS.length]}"></div>
       <div class="product-info">
@@ -1450,7 +1469,7 @@ function openModal(type,id){
       </div>
       <div class="form-group"><label>Notes</label><input type="text" id="mod-notes" value="${p?p.notes:''}" placeholder="Barquette..."></div>
       <div class="form-group">
-        <label>Centrales disponibles <span style="font-size:11px;color:var(--text3)">(laisser vide = toutes enseignes)</span></label>
+        <label>Centrales disponibles</label>
         <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px" id="centrales-picker">${centralesOptions}</div>
       </div>
       <div class="modal-actions"><button class="btn" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveModal()"><i class="ti ti-check"></i> Enregistrer</button></div>`;
@@ -1581,7 +1600,7 @@ function startFacings(){
   document.getElementById('facing-title').textContent=enseigne+' — '+magasin;
   // Filtre les refs par centrale
   const centraleObj=centrale?centrales.find(c=>c.nom===centrale&&c.enseigne===enseigne):null;
-  const filteredProducts=centraleObj?products.filter(p=>!p.centrales||p.centrales.length===0||p.centrales.includes(centraleObj.id)):products;
+  const filteredProducts=centraleObj?products.filter(p=>p.centrales&&p.centrales.length>0&&p.centrales.includes(centraleObj.id)):products.filter(p=>p.centrales&&p.centrales.length>0);
   document.getElementById('facing-filter-label').textContent=centrale?'Refs disponibles : '+centrale:'Toutes les références';
   renderFacings(filteredProducts);
   showScreen('screen-facings');
@@ -1668,6 +1687,9 @@ function renderFacings(prods){
         <div style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:3px">
           <span>CA/ML:</span><span id="fcaml-${p.id}" style="font-weight:500;color:var(--text)">\u2014</span>
         </div>
+        <div style="font-size:11px;display:flex;align-items:center">
+          <span id="fcapf-${p.id}" style="font-weight:500;color:var(--text3)"></span>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -1703,6 +1725,7 @@ function calcCa(pid){
   const vmEl=document.getElementById('fvm-'+pid);
   const caEl=document.getElementById('fca-'+pid);
   const camlEl=document.getElementById('fcaml-'+pid);
+  const capfEl=document.getElementById('fcapf-'+pid);
   const fcEl=document.getElementById('fc-'+pid);
   if(!pvEl||!vmEl||!caEl)return;
   const pv=parseFloat(pvEl.value);
@@ -1715,9 +1738,23 @@ function calcCa(pid){
     const ca=vmh*pv;
     caEl.textContent=ca.toFixed(0)+'€';
     if(camlEl)camlEl.textContent=ml>0?(ca/ml).toFixed(0)+'€/m':'—';
+    // % CA PF Circana
+    if(capfEl){
+      const magNom=currentReleve&&currentReleve.magasin;
+      const mag=magasins.find(m=>m.groupe_enseigne+' — '+m.ville===magNom||(m.groupe_enseigne+' '+m.ville)===magNom||magNom&&magNom.includes(m.ville));
+      const caPF=mag?(mag.ca_tf_hiver||0)+(mag.ca_tf_ete||0):0;
+      if(caPF>0){
+        const pct=(ca/caPF*100).toFixed(1);
+        capfEl.textContent=pct+'% du CA PF';
+        capfEl.style.color=parseFloat(pct)>=5?'var(--success-text)':'var(--text3)';
+      } else {
+        capfEl.textContent='';
+      }
+    }
   } else {
     caEl.textContent='—';
     if(camlEl)camlEl.textContent='—';
+    if(capfEl)capfEl.textContent='';
   }
 }
 
