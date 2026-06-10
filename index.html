@@ -1022,6 +1022,7 @@ async function renderDashboard(containerId){
   const el=document.getElementById(containerId);
   if(!el) return;
   el.innerHTML='<div class="empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>Calcul de la DN…</div>';
+  try{ await loadDN(); }catch(e){} // relit le théorique + marques partagés (évite tout décalage de cache entre comptes)
 
   const isManager = currentProfile && (currentProfile.role==="directeur"||currentProfile.role==="admin");
   let workReleves = releves.slice();
@@ -1119,6 +1120,16 @@ function openDNConfig(){
       <input type="number" min="0" class="dn-cfg" data-key="${safe}" data-saison="hiver" value="${th.hiver||0}" style="width:100%;padding:6px;text-align:center;border:0.5px solid var(--border);border-radius:8px;background:var(--bg)">
     </div>`;
   }).join("");
+  const marquesAll=[...new Set(products.map(p=>(p.marque||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const marquesCochees = (dnMarques&&dnMarques.length)?dnMarques.map(x=>String(x).toLowerCase().trim()):marquesAll.filter(m=>m.toLowerCase().indexOf("azura")!==-1).map(m=>m.toLowerCase());
+  const marquesRows = marquesAll.map(m=>{
+    const safe=m.replace(/"/g,"&quot;");
+    const on=marquesCochees.indexOf(m.toLowerCase())!==-1;
+    return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;font-size:13px">
+      <input type="checkbox" class="dn-marque" data-marque="${safe}" ${on?"checked":""} style="width:17px;height:17px;flex-shrink:0">
+      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${m}</span>
+    </label>`;
+  }).join("");
   const c=document.getElementById("modal-content");
   c.innerHTML=`
     <h3 style="margin-bottom:4px">Théorique DN</h3>
@@ -1134,6 +1145,9 @@ function openDNConfig(){
       <input type="number" id="dn-ete-fin" min="1" max="12" value="${dnConfig.ete_fin}" style="width:60px;padding:6px;text-align:center;border:0.5px solid var(--border);border-radius:8px;background:var(--bg)">
       <span style="font-size:12px;color:var(--text3)">le reste = hiver</span>
     </div>
+    <div class="section-label" style="margin-top:0">Marques comptées dans ma DN</div>
+    <p style="font-size:11px;color:var(--text3);margin:-2px 0 8px">Coche tes marques + MDD (Azura, Eco+, Petit Prix, Simpl…). Seules celles-ci comptent dans la DN.</p>
+    <div style="max-height:26vh;overflow-y:auto;margin-bottom:16px;border:0.5px solid var(--border);border-radius:10px;padding:4px 12px">${marquesRows||'<div class="empty">Aucune marque au catalogue.</div>'}</div>
     <div style="display:flex;gap:8px">
       <button class="btn" onclick="saveDNConfig()" style="flex:1"><i class="ti ti-device-floppy"></i> Enregistrer</button>
       <button class="btn-sm" onclick="closeModal()" style="background:var(--bg3);color:var(--text);border:0.5px solid var(--border)">Annuler</button>
@@ -1151,13 +1165,14 @@ async function saveDNConfig(){
   dnTheorique=map;
   dnConfig.ete_debut=parseInt(document.getElementById("dn-ete-debut").value,10)||5;
   dnConfig.ete_fin=parseInt(document.getElementById("dn-ete-fin").value,10)||10;
+  dnMarques=Array.from(document.querySelectorAll(".dn-marque")).filter(cb=>cb.checked).map(cb=>cb.dataset.marque);
   saveDNLocal();
   closeModal();
   setSyncStatus("syncing","Sauvegarde DN…");
   try{
     const rows=Object.keys(map).map(k=>({centrale:k,cible_ete:map[k].ete,cible_hiver:map[k].hiver}));
     if(rows.length){ const {error}=await sb.from("dn_theorique").upsert(rows,{onConflict:"centrale"}); if(error) throw error; }
-    const {error:e2}=await sb.from("dn_config").upsert([{id:1,ete_debut:dnConfig.ete_debut,ete_fin:dnConfig.ete_fin}],{onConflict:"id"});
+    const {error:e2}=await sb.from("dn_config").upsert([{id:1,ete_debut:dnConfig.ete_debut,ete_fin:dnConfig.ete_fin,marques_dn:JSON.stringify(dnMarques)}],{onConflict:"id"});
     if(e2) throw e2;
     setSyncStatus("ok","Synchronisé");
   }catch(e){ setSyncStatus("error","DN enregistrée en local"); }
@@ -1180,14 +1195,17 @@ function getEnseigneAvatar(enseigne,size=48){
 // ========== DN (Distribution Numerique) ==========
 let dnTheorique = {};                       // { centraleKey: {ete:int, hiver:int} }
 let dnConfig = { ete_debut:5, ete_fin:10 }; // mois (1-12) de debut/fin de saison ete, inclus
+let dnMarques = [];                         // marques comptees dans la DN (ex: Azura, Eco+, Petit Prix, Simpl). Vide => repli sur "azura"
 
 function loadDNLocal(){
   try{ const t=localStorage.getItem("rsp_dn_theorique"); if(t) dnTheorique=JSON.parse(t); }catch(e){}
   try{ const c=localStorage.getItem("rsp_dn_config"); if(c) dnConfig=Object.assign(dnConfig,JSON.parse(c)); }catch(e){}
+  try{ const m=localStorage.getItem("rsp_dn_marques"); if(m) dnMarques=JSON.parse(m); }catch(e){}
 }
 function saveDNLocal(){
   localStorage.setItem("rsp_dn_theorique",JSON.stringify(dnTheorique));
   localStorage.setItem("rsp_dn_config",JSON.stringify(dnConfig));
+  localStorage.setItem("rsp_dn_marques",JSON.stringify(dnMarques));
 }
 async function loadDN(){
   loadDNLocal();
@@ -1205,6 +1223,7 @@ async function loadDN(){
       const c=data[0];
       if(c.ete_debut!=null) dnConfig.ete_debut=c.ete_debut;
       if(c.ete_fin!=null) dnConfig.ete_fin=c.ete_fin;
+      if(c.marques_dn){ try{ const arr=JSON.parse(c.marques_dn); if(Array.isArray(arr)) dnMarques=arr; }catch(e){} }
     }
   }catch(e){}
   saveDNLocal();
@@ -1229,12 +1248,18 @@ function centraleKeyReleve(r){
 function estMarqueAzura(marque){
   return !!marque && marque.toLowerCase().indexOf("azura")!==-1;
 }
+function estMarqueDN(marque){
+  if(!marque) return false;
+  if(!dnMarques || dnMarques.length===0) return estMarqueAzura(marque); // repli si non configure
+  const m=marque.toLowerCase().trim();
+  return dnMarques.some(x=>String(x).toLowerCase().trim()===m);
+}
 function nbRefsAzuraReleve(r){
   const seen={};
   (r.results||[]).forEach(l=>{
     if((l.count||0)<=0) return;
     const p=products.find(x=>x.id===l.pid);
-    if(p && estMarqueAzura(p.marque)) seen[l.pid]=true;
+    if(p && estMarqueDN(p.marque)) seen[l.pid]=true;
   });
   return Object.keys(seen).length;
 }
