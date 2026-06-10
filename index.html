@@ -237,6 +237,9 @@ canvas{display:block;margin:0 auto}
     <button class="sidebar-nav-item" id="snav-dashboard" onclick="desktopTab('dashboard')">
       <i class="ti ti-chart-bar"></i> Dashboard DN
     </button>
+    <button class="sidebar-nav-item" id="snav-clients" onclick="desktopTab('clients')">
+      <i class="ti ti-users"></i> Clients
+    </button>
     <button class="sidebar-nav-item active" id="snav-releves" onclick="desktopTab('releves')">
       <i class="ti ti-clipboard-list"></i> Relevés
     </button>
@@ -288,6 +291,7 @@ canvas{display:block;margin:0 auto}
   <div class="tabs" id="main-tabs">
     <button class="tab4 active" onclick="switchTab('releves',this)">Relevés</button>
     <button class="tab4" onclick="switchTab('dashboard',this)">DN</button>
+    <button class="tab4" onclick="switchTab('clients',this)">Clients</button>
     <button class="tab4" id="tab-btn-equipe" style="display:none" onclick="switchTab('equipe',this)">Équipe</button>
     <button class="tab4" onclick="switchTab('enseignes',this)">Enseignes</button>
     <button class="tab4" onclick="switchTab('catalogue',this)">Catalogue</button>
@@ -305,6 +309,7 @@ canvas{display:block;margin:0 auto}
   <div id="tab-dashboard" style="display:none">
     <div id="dashboard-content"></div>
   </div>
+  <div id="tab-clients" style="display:none"><div id="clients-content"></div></div>
   <div id="tab-enseignes" style="display:none"><div id="enseignes-list"></div></div>
   <div id="tab-catalogue" style="display:none">
     <div class="filter-bar" id="catalogue-filter"></div>
@@ -360,12 +365,16 @@ canvas{display:block;margin:0 auto}
       <label>Client vu ?</label>
       <div style="display:flex;gap:10px;margin-top:4px">
         <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;color:var(--text)">
-          <input type="radio" name="client-vu" id="r-client-oui" value="true" style="width:auto;accent-color:var(--accent)"> Oui
+          <input type="radio" name="client-vu" id="r-client-oui" value="true" onchange="refreshReleveContacts()" style="width:auto;accent-color:var(--accent)"> Oui
         </label>
         <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;color:var(--text)">
-          <input type="radio" name="client-vu" id="r-client-non" value="false"> Non
+          <input type="radio" name="client-vu" id="r-client-non" value="false" onchange="refreshReleveContacts()"> Non
         </label>
       </div>
+    </div>
+    <div class="form-group" id="r-contacts-group" style="display:none">
+      <label>Personnes vues</label>
+      <div id="r-contacts-list" style="margin-top:4px"></div>
     </div>
     <div class="form-group" id="actions-group">
       <label>Actions menées</label>
@@ -460,6 +469,8 @@ canvas{display:block;margin:0 auto}
   </div>
   <div id="client-header"></div>
   <div id="client-last-visit"></div>
+  <div class="section-label">Contacts</div>
+  <div id="client-contacts"></div>
   <div class="section-label">Évolution linéaire Azura</div>
   <canvas id="client-chart" height="120" style="width:100%;margin-bottom:18px"></canvas>
   <div class="section-label">Références au dernier passage</div>
@@ -563,7 +574,7 @@ function desktopTab(tab){
   const activeBtn = document.getElementById('snav-'+tab);
   if(activeBtn) activeBtn.classList.add('active');
   // Titre
-  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN'};
+  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients'};
   document.getElementById('desktop-topbar-title').textContent = titles[tab]||tab;
   document.getElementById('desktop-back-btn').style.display = 'none';
   // Rendu du contenu
@@ -572,6 +583,11 @@ function desktopTab(tab){
   if(tab==='dashboard'){
     content.innerHTML = '<div id="dashboard-content-desktop"></div>';
     renderDashboard('dashboard-content-desktop');
+    return;
+  }
+  if(tab==='clients'){
+    content.innerHTML = '<div id="clients-content-desktop"></div>';
+    renderClients('clients-content-desktop','');
     return;
   }
   // Récupère le contenu de l'onglet mobile et le clone dans desktop-content
@@ -591,7 +607,7 @@ function renderRelevesDesktop(){
   const el = document.querySelector('#desktop-content #releve-list');
   if(!el) return;
   if(!releves.length){el.innerHTML='<div class="empty"><i class="ti ti-clipboard-list"></i>Aucun relevé pour l\'instant.</div>';return;}
-  el.innerHTML = releves.slice().reverse().map(r=>`
+  el.innerHTML = relevesAccordionHtml(r=>`
     <div class="releve-card" style="cursor:pointer">
       ${getEnseigneAvatar(r.enseigne,40)}
       <div class="releve-info" onclick="desktopShowReleve('${r.id}')">
@@ -603,7 +619,7 @@ function renderRelevesDesktop(){
         <button class="icon-btn" onclick="desktopEditReleve('${r.id}')" title="Modifier"><i class="ti ti-edit"></i></button>
         <button class="icon-btn danger" onclick="deleteReleve('${r.id}');desktopTab('releves')" title="Supprimer"><i class="ti ti-trash"></i></button>
       </div>
-    </div>`).join('');
+    </div>`);
 }
 
 function renderEnseignesDesktop(){
@@ -752,6 +768,8 @@ function desktopFicheClient(magasin, enseigne){
   content.innerHTML = `
     <div id="client-header"></div>
     <div id="client-last-visit"></div>
+    <div class="section-label">Contacts</div>
+    <div id="client-contacts"></div>
     <div class="section-label">Évolution linéaire Azura</div>
     <canvas id="client-chart" height="120" style="width:100%;margin-bottom:18px"></canvas>
     <div class="section-label">Références au dernier passage</div>
@@ -895,13 +913,14 @@ async function init(){
     const btn=document.getElementById('tab-btn-equipe');
     if(btn)btn.style.display='';
   }
-  renderHome();initPhotoListener();await loadDN();if(window.innerWidth>=768)initDesktop();
+  renderHome();initPhotoListener();await loadDN();await loadContacts();if(window.innerWidth>=768)initDesktop();
   }catch(e){
     setSyncStatus('error','Hors ligne');
     centrales=JSON.parse(localStorage.getItem('rsp_centrales')||'null')||JSON.parse(JSON.stringify(DEFAULT_CENTRALES));
     products=JSON.parse(localStorage.getItem('rsp_products')||'null')||JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
     releves=JSON.parse(localStorage.getItem('rsp_releves')||'[]');
     loadDNLocal();
+    loadContactsLocal();
     renderHome();
   }
 }
@@ -940,7 +959,7 @@ function showScreen(id){
 function switchTab(tab,btn){
   document.querySelectorAll('.tab4').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  ['releves','equipe','enseignes','catalogue','centrales','dashboard'].forEach(t=>{
+  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients'].forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el)el.style.display=t===tab?'block':'none';
   });
@@ -949,6 +968,7 @@ function switchTab(tab,btn){
   if(tab==='centrales')renderCentrales();
   if(tab==='equipe')renderEquipe();
   if(tab==='dashboard')renderDashboard('dashboard-content');
+  if(tab==='clients')renderClients('clients-content','');
 }
 
 function renderHome(){renderReleves();renderCatalogue();renderEnseignes();renderCentrales();}
@@ -1179,6 +1199,216 @@ async function saveDNConfig(){
   renderDashboard(desktopMode?"dashboard-content-desktop":"dashboard-content");
 }
 
+// ========== CONTACTS CLIENTS (perso par commercial) ==========
+let contacts = []; // {id,user_id,magasin,magasin_id,nom,prenom,poste,genre,telephone,email,commentaire,planning}
+const POSTES = ["Directeur","Adhérent","Chef de rayon","Adjoint","Employé libre-service","Chef de département"];
+const POSTES_F = {"Directeur":"Directrice","Adhérent":"Adhérente","Chef de rayon":"Cheffe de rayon","Adjoint":"Adjointe","Employé libre-service":"Employée libre-service","Chef de département":"Cheffe de département"};
+const JOURS = [["lun","Lun"],["mar","Mar"],["mer","Mer"],["jeu","Jeu"],["ven","Ven"]];
+
+function posteLabel(c){
+  if(!c||!c.poste) return "";
+  return (c.genre==="F" && POSTES_F[c.poste]) ? POSTES_F[c.poste] : c.poste;
+}
+function loadContactsLocal(){ try{ const t=localStorage.getItem("rsp_contacts"); if(t) contacts=JSON.parse(t); }catch(e){} }
+function saveContactsLocal(){ localStorage.setItem("rsp_contacts",JSON.stringify(contacts)); }
+async function loadContacts(){
+  loadContactsLocal();
+  try{
+    const {data,error}=await sb.from("contacts").select("*").eq("user_id",currentUser.id);
+    if(!error && data){
+      contacts=data.map(c=>{ let pl=c.planning; if(typeof pl==="string"){ try{pl=JSON.parse(pl);}catch(e){pl={};} } return {...c, planning: pl||{}}; });
+      saveContactsLocal();
+    }
+  }catch(e){}
+}
+function contactsDuMagasin(magasin){ return contacts.filter(c=>c.magasin===magasin); }
+function planningResume(pl){
+  if(!pl) return "";
+  const abs=[];
+  JOURS.forEach(([k,lbl])=>{
+    const d=pl[k]||{};
+    if(!d.m && !d.a) abs.push(lbl);
+    else if(!d.m) abs.push(lbl+" (mat.)");
+    else if(!d.a) abs.push(lbl+" (aprem)");
+  });
+  return abs.length ? ("Absent : "+abs.join(", ")) : "Présent toute la semaine";
+}
+
+function openContactForm(magasin, enseigne, contactId){
+  const c = contactId ? contacts.find(x=>x.id===contactId) : null;
+  const pl = (c&&c.planning) ? c.planning : {};
+  const posteOpts = POSTES.map(p=>`<option value="${p}" ${c&&c.poste===p?"selected":""}>${p}</option>`).join("");
+  const planningRows = JOURS.map(([k,lbl])=>{
+    const d=pl[k]||{};
+    return `<div style="display:flex;align-items:center;gap:14px;padding:5px 0;border-bottom:0.5px solid var(--border)">
+      <div style="width:40px;font-size:13px;font-weight:500">${lbl}</div>
+      <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="checkbox" class="ct-pl" data-jour="${k}" data-slot="m" ${d.m?"checked":""} style="width:17px;height:17px"> Matin</label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="checkbox" class="ct-pl" data-jour="${k}" data-slot="a" ${d.a?"checked":""} style="width:17px;height:17px"> Aprem</label>
+    </div>`;
+  }).join("");
+  const inS="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px";
+  const el=document.getElementById("modal-content");
+  el.innerHTML=`
+    <h3 style="margin-bottom:12px">${c?"Modifier le contact":"Nouveau contact"}</h3>
+    <input type="hidden" id="ct-id" value="${c?c.id:""}">
+    <input type="hidden" id="ct-magasin" value="${(magasin||'').replace(/"/g,'&quot;')}">
+    <input type="hidden" id="ct-enseigne" value="${(enseigne||'').replace(/"/g,'&quot;')}">
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2)">Prénom</label><input id="ct-prenom" value="${c?(c.prenom||'').replace(/"/g,'&quot;'):''}" style="${inS}"></div>
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2)">Nom</label><input id="ct-nom" value="${c?(c.nom||'').replace(/"/g,'&quot;'):''}" style="${inS}"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-end">
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2)">Poste</label><select id="ct-poste" style="${inS}"><option value="">— Choisir —</option>${posteOpts}</select></div>
+      <div style="display:flex;gap:8px;padding-bottom:8px">
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer"><input type="radio" name="ct-genre" value="M" ${!c||c.genre!=="F"?"checked":""} style="width:auto"> H</label>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer"><input type="radio" name="ct-genre" value="F" ${c&&c.genre==="F"?"checked":""} style="width:auto"> F</label>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2)">Téléphone</label><input id="ct-tel" value="${c?(c.telephone||'').replace(/"/g,'&quot;'):''}" style="${inS}"></div>
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2)">Email</label><input id="ct-email" value="${c?(c.email||'').replace(/"/g,'&quot;'):''}" style="${inS}"></div>
+    </div>
+    <div style="margin-bottom:12px"><label style="font-size:12px;color:var(--text2)">Commentaire</label><textarea id="ct-comm" rows="2" style="${inS};resize:vertical">${c?(c.commentaire||''):''}</textarea></div>
+    <div class="section-label" style="margin-top:0">Présence (coché = présent)</div>
+    <div style="margin-bottom:14px">${planningRows}</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" onclick="saveContact()" style="flex:1"><i class="ti ti-device-floppy"></i> Enregistrer</button>
+      <button class="btn-sm" onclick="closeModal()" style="background:var(--bg3);color:var(--text);border:0.5px solid var(--border)">Annuler</button>
+    </div>`;
+  document.getElementById("modal-overlay").classList.add("open");
+}
+
+async function saveContact(){
+  const id=document.getElementById("ct-id").value || ("c"+Date.now());
+  const magasin=document.getElementById("ct-magasin").value;
+  const enseigne=document.getElementById("ct-enseigne").value;
+  const prenom=document.getElementById("ct-prenom").value.trim();
+  const nom=document.getElementById("ct-nom").value.trim();
+  if(!prenom && !nom){ alert("Indique au moins un nom ou prénom."); return; }
+  const genreEl=document.querySelector('input[name="ct-genre"]:checked');
+  const planning={};
+  JOURS.forEach(([k])=>{ planning[k]={m:false,a:false}; });
+  document.querySelectorAll(".ct-pl").forEach(cb=>{ planning[cb.dataset.jour][cb.dataset.slot]=cb.checked; });
+  const obj={ id, user_id:currentUser.id, magasin, magasin_id:null, prenom, nom,
+    poste:document.getElementById("ct-poste").value||null,
+    genre:genreEl?genreEl.value:"M",
+    telephone:document.getElementById("ct-tel").value.trim()||null,
+    email:document.getElementById("ct-email").value.trim()||null,
+    commentaire:document.getElementById("ct-comm").value.trim()||null,
+    planning };
+  const idx=contacts.findIndex(x=>x.id===id);
+  if(idx>=0) contacts[idx]=obj; else contacts.push(obj);
+  saveContactsLocal();
+  closeModal();
+  renderClientContacts(magasin, enseigne);
+  if(typeof desktopMode!=="undefined" && desktopMode){ /* le rendu desktop partage le même conteneur */ }
+  setSyncStatus("syncing","Sauvegarde contact…");
+  try{
+    const {error}=await sb.from("contacts").upsert([obj],{onConflict:"id"});
+    if(error) throw error;
+    setSyncStatus("ok","Synchronisé");
+  }catch(e){ setSyncStatus("error","Contact enregistré en local"); }
+}
+
+async function deleteContact(id, magasin, enseigne){
+  if(!confirm("Supprimer ce contact ?")) return;
+  contacts=contacts.filter(c=>c.id!==id);
+  saveContactsLocal();
+  renderClientContacts(magasin, enseigne);
+  try{ await sb.from("contacts").delete().eq("id",id); }catch(e){}
+}
+
+function renderClientContacts(magasin, enseigne){
+  const els=document.querySelectorAll("#client-contacts");
+  if(!els.length) return;
+  const list=contactsDuMagasin(magasin);
+  const safeM=(magasin||"").replace(/'/g,"\\'");
+  const safeE=(enseigne||"").replace(/'/g,"\\'");
+  const rows = list.length ? list.map(c=>{
+    const safeId=c.id.replace(/'/g,"\\'");
+    return `<div style="background:var(--bg);border:0.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px">
+      <div style="display:flex;align-items:flex-start;gap:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600">${(c.prenom||"")} ${(c.nom||"")}</div>
+          ${c.poste?`<div style="font-size:12px;color:var(--accent);font-weight:500">${posteLabel(c)}</div>`:""}
+          <div style="font-size:12px;color:var(--text2);margin-top:4px">
+            ${c.telephone?`<span>📞 ${c.telephone}</span>`:""}${c.telephone&&c.email?" · ":""}${c.email?`<span>✉️ ${c.email}</span>`:""}
+          </div>
+          ${c.commentaire?`<div style="font-size:12px;color:var(--text2);font-style:italic;margin-top:4px">"${c.commentaire}"</div>`:""}
+          <div style="font-size:11px;color:var(--text3);margin-top:6px">${planningResume(c.planning)}</div>
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button class="icon-btn" onclick="openContactForm('${safeM}','${safeE}','${safeId}')" title="Modifier"><i class="ti ti-edit"></i></button>
+          <button class="icon-btn danger" onclick="deleteContact('${safeId}','${safeM}','${safeE}')" title="Supprimer"><i class="ti ti-trash"></i></button>
+        </div>
+      </div>
+    </div>`;
+  }).join("") : `<div style="font-size:13px;color:var(--text3);padding:8px 0">Aucun contact pour ce magasin.</div>`;
+  els.forEach(el=>{
+    el.innerHTML = rows + `<button class="btn-sm" onclick="openContactForm('${safeM}','${safeE}')" style="background:var(--bg3);color:var(--text);border:0.5px solid var(--border);margin-top:4px"><i class="ti ti-plus"></i> Ajouter un contact</button>`;
+  });
+}
+
+// ----- Liste magasins (onglet Clients) -----
+function magasinsClients(){
+  // Magasins issus des relevés (dédupliqués), avec enseigne
+  const map={};
+  releves.forEach(r=>{ if(r.magasin && !map[r.magasin]) map[r.magasin]={magasin:r.magasin, enseigne:r.enseigne}; });
+  return Object.values(map).sort((a,b)=>a.magasin.localeCompare(b.magasin));
+}
+function renderClients(containerId, filter){
+  const el=document.getElementById(containerId);
+  if(!el) return;
+  const q=(filter||"").toLowerCase().trim();
+  let list=magasinsClients();
+  if(q) list=list.filter(x=>x.magasin.toLowerCase().includes(q)||(x.enseigne||"").toLowerCase().includes(q));
+  const rows = list.length ? list.map(x=>{
+    const nb=contactsDuMagasin(x.magasin).length;
+    const safeM=x.magasin.replace(/'/g,"\\'"); const safeE=(x.enseigne||"").replace(/'/g,"\\'");
+    return `<div class="releve-card" style="cursor:pointer" onclick="showFicheClient('${safeM}','${safeE}')">
+      ${getEnseigneAvatar(x.enseigne,40)}
+      <div class="releve-info">
+        <div class="releve-name">${x.magasin}</div>
+        <div class="releve-sub">${x.enseigne||""}${nb?` · ${nb} contact${nb>1?"s":""}`:" · aucun contact"}</div>
+      </div>
+      <i class="ti ti-chevron-right" style="color:var(--text3);font-size:18px;flex-shrink:0"></i>
+    </div>`;
+  }).join("") : `<div class="empty"><i class="ti ti-users"></i>Aucun magasin. Fais un relevé pour qu\\'il apparaisse ici.</div>`;
+  el.innerHTML = `
+    <div class="form-group" style="margin-bottom:12px">
+      <input type="text" id="${containerId}-search" placeholder="Rechercher un magasin…" value="${(filter||'').replace(/"/g,'&quot;')}" oninput="renderClients('${containerId}',this.value)" style="width:100%;padding:10px;border:0.5px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:14px">
+    </div>
+    ${rows}`;
+  const s=document.getElementById(containerId+"-search");
+  if(s){ const v=s.value; s.focus(); s.setSelectionRange(v.length,v.length); }
+}
+
+// ----- Contacts dans le formulaire de relevé -----
+function refreshReleveContacts(){
+  const wrap=document.getElementById("r-contacts-group");
+  const listEl=document.getElementById("r-contacts-list");
+  if(!wrap||!listEl) return;
+  const vu=document.querySelector('input[name="client-vu"]:checked');
+  const isVu = vu && vu.value==="true";
+  const magasin=(document.getElementById("r-magasin").value||"").trim();
+  if(!isVu || !magasin){ wrap.style.display="none"; listEl.innerHTML=""; return; }
+  const list=contactsDuMagasin(magasin);
+  wrap.style.display="block";
+  if(!list.length){ listEl.innerHTML=`<div style="font-size:12px;color:var(--text3)">Aucun contact enregistré pour ce magasin. Ajoute-les depuis l\\'onglet Clients.</div>`; return; }
+  const pre = (currentReleve && currentReleve.contacts_vus) ? currentReleve.contacts_vus.map(x=>(x.prenom||"")+"|"+(x.nom||"")) : [];
+  listEl.innerHTML=list.map(c=>{
+    const key=(c.prenom||"")+"|"+(c.nom||"");
+    const on=pre.indexOf(key)!==-1;
+    return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:14px;cursor:pointer">
+      <input type="checkbox" class="r-contact" data-prenom="${(c.prenom||'').replace(/"/g,'&quot;')}" data-nom="${(c.nom||'').replace(/"/g,'&quot;')}" data-poste="${(posteLabel(c)||'').replace(/"/g,'&quot;')}" ${on?"checked":""} style="width:17px;height:17px;flex-shrink:0">
+      <span>${(c.prenom||"")} ${(c.nom||"")}${c.poste?` <span style="color:var(--text3);font-size:12px">· ${posteLabel(c)}</span>`:""}</span>
+    </label>`;
+  }).join("");
+}
+function getSelectedContacts(){
+  return Array.from(document.querySelectorAll(".r-contact")).filter(cb=>cb.checked).map(cb=>({prenom:cb.dataset.prenom,nom:cb.dataset.nom,poste:cb.dataset.poste||null}));
+}
+
 // LOGOS
 const LOGOS={'Intermarché Super':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Intermarch%C3%A9_logo_.svg.png','Intermarché Hyper':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Intermarch%C3%A9_logo_.svg.png','Carrefour':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Logo_Carrefour.svg.png','Carrefour Market':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/logo_carrefour_market.png','Leclerc':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Leclerc_logo.svg.webp','Auchan':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Logo_Auchan_.svg.png','Super U':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/U_commer%C3%A7ants_logo.svg.png','Hyper U':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/U_commer%C3%A7ants_logo.svg.png'};
 const ENSEIGNE_COLORS={'Intermarché Super':'#E20025','Intermarché Hyper':'#E20025','Carrefour':'#004A97','Carrefour Market':'#004A97','Leclerc':'#003189','Auchan':'#CC0000','Super U':'#E30613','Hyper U':'#E30613'};
@@ -1363,6 +1593,7 @@ function showFicheClient(magasin, enseigne){
       <div style="background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:16px">
         <div style="font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px">Dernière visite — ${last.date}</div>
         ${last.client_vu!=null?`<div style="font-size:13px;margin-bottom:6px">Client vu : <strong style="color:${last.client_vu?'var(--success-text)':'var(--danger-text)'}">${last.client_vu?'Oui':'Non'}</strong></div>`:''}
+        ${(last.client_vu===true && last.contacts_vus && last.contacts_vus.length)?`<div style="font-size:13px;margin-bottom:6px">Personnes vues : <strong>${last.contacts_vus.map(c=>(c.prenom||'')+' '+(c.nom||'')+(c.poste?' ('+c.poste+')':'')).join(', ')}</strong></div>`:''}
         ${last.actions_menees&&last.actions_menees.length?`<div style="font-size:13px;margin-bottom:6px">Actions : ${last.actions_menees.map(a=>`<span class="badge" style="background:var(--info-bg);color:var(--info-text)">${a}</span>`).join(' ')}</div>`:''}
         ${last.commentaire?`<div style="font-size:13px;color:var(--text2);font-style:italic;margin-bottom:6px">"${last.commentaire}"</div>`:'<div style="font-size:13px;color:var(--text3);font-style:italic;margin-bottom:6px">Aucun commentaire</div>'}
         <div style="font-size:13px">Linéaire Azura : <strong style="color:var(--accent)">${azuraML.toFixed(2)}m</strong> · Total : <strong>${(last.total||0).toFixed(2)}m</strong></div>
@@ -1475,6 +1706,7 @@ function showFicheClient(magasin, enseigne){
       <i class="ti ti-chevron-right" style="color:var(--text3);font-size:18px"></i>
     </div>`).join('');
 
+  renderClientContacts(magasin, enseigne);
   showScreen('screen-client');
 }
 
@@ -1483,10 +1715,43 @@ function openNewReleveFromClient(){
 }
 
 // RELEVÉS
+let releveOpenDates = null; // Set des dates dépliées (null = pas encore initialisé)
+function relevesGroupesParDate(){
+  const groups={};
+  releves.forEach(r=>{ const d=r.date||'(sans date)'; (groups[d]=groups[d]||[]).push(r); });
+  return Object.keys(groups).sort((a,b)=>{
+    const ka=(a||'').split('/').reverse().join('-'), kb=(b||'').split('/').reverse().join('-');
+    return kb.localeCompare(ka);
+  }).map(d=>({date:d, releves:groups[d]}));
+}
+function toggleReleveDate(date){
+  if(releveOpenDates===null) releveOpenDates=new Set();
+  if(releveOpenDates.has(date)) releveOpenDates.delete(date); else releveOpenDates.add(date);
+  renderReleves();
+  if(typeof renderRelevesDesktop==='function') renderRelevesDesktop();
+}
+function relevesAccordionHtml(cardFn){
+  const groups=relevesGroupesParDate();
+  if(releveOpenDates===null){ releveOpenDates=new Set(); if(groups.length) releveOpenDates.add(groups[0].date); }
+  return groups.map(g=>{
+    const open=releveOpenDates.has(g.date);
+    const totalM=g.releves.reduce((s,r)=>s+(r.total||0),0);
+    const safeD=g.date.replace(/'/g,"\\'");
+    return `<div style="margin-bottom:10px">
+      <div onclick="toggleReleveDate('${safeD}')" style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--bg3);border-radius:10px;cursor:pointer;user-select:none">
+        <i class="ti ti-chevron-${open?'down':'right'}" style="font-size:16px;color:var(--text2)"></i>
+        <div style="flex:1;font-weight:600;font-size:14px">${g.date}</div>
+        <div style="font-size:12px;color:var(--text2)">${g.releves.length} relevé${g.releves.length>1?'s':''} · ${totalM.toFixed(1)}m</div>
+      </div>
+      <div style="display:${open?'block':'none'};padding-top:8px">${g.releves.map(cardFn).join('')}</div>
+    </div>`;
+  }).join('');
+}
 function renderReleves(){
   const el=document.getElementById('releve-list');
+  if(!el)return;
   if(!releves.length){el.innerHTML='<div class="empty"><i class="ti ti-clipboard-list"></i>Aucun relevé pour l\'instant.</div>';return;}
-  el.innerHTML=releves.slice().reverse().map(r=>`
+  el.innerHTML=relevesAccordionHtml(r=>`
     <div class="releve-card">
       ${getEnseigneAvatar(r.enseigne,40)}
       <div class="releve-info" onclick="showReleve('${r.id}','home')">
@@ -1499,7 +1764,7 @@ function renderReleves(){
         <button class="icon-btn" onclick="openModal('rename','${r.id}')" aria-label="Renommer"><i class="ti ti-pencil"></i></button>
         <button class="icon-btn danger" onclick="deleteReleve('${r.id}')" aria-label="Supprimer"><i class="ti ti-trash"></i></button>
       </div>
-    </div>`).join('');
+    </div>`);
 }
 
 async function deleteReleve(id){
@@ -1532,6 +1797,7 @@ function openEditReleve(id){
       });
     }
   },100);
+  setTimeout(()=>{if(typeof refreshReleveContacts==='function')refreshReleveContacts();},130);
   showScreen('screen-new-releve');
 }
 
@@ -1604,6 +1870,7 @@ function selectMagasin(id){
   } else box.style.display='none';
   // Stocker l'id magasin pour le relevé
   document.getElementById('r-magasin').dataset.magasinId=id;
+  if(typeof refreshReleveContacts==='function') refreshReleveContacts();
 }
 
 // Fermer dropdown si clic ailleurs
@@ -1933,6 +2200,7 @@ function startFacings(){
   if(!editingReleve){
     const magasinId=document.getElementById('r-magasin').dataset.magasinId||null;
     const clientVu=document.querySelector('input[name="client-vu"]:checked');const actionsM=getSelectedActions();const commentaireV=(document.getElementById('r-commentaire')||{}).value||null;currentReleve={id:'r'+Date.now(),enseigne,magasin,magasin_id:magasinId,centrale,type:document.getElementById('r-type').value,typologie:document.getElementById('r-typologie').value,date:document.getElementById('r-date').value.trim()||today,client_vu:clientVu?clientVu.value==='true':null,actions_menees:actionsM.length?actionsM:null,commentaire:commentaireV,facings:{},total:0,results:[]};
+    currentReleve.contacts_vus=(currentReleve.client_vu===true)?getSelectedContacts():null;
     facings={};products.forEach(p=>{facings[p.id]={pid:p.id,count:0};});
     clearPhoto();
   } else {
@@ -1983,7 +2251,7 @@ function renderFacings(prods){
           <span style="font-size:11px;color:var(--text2)">Prix€</span>
           <input type="number" id="fp-${p.id}" value="${prixInit}" placeholder="${p.prix_conseille||'0.00'}" step="0.01" min="0"
             style="width:60px;padding:4px 6px;font-size:12px;border:0.5px solid var(--border2);border-radius:6px;background:var(--bg)"
-            oninput="updatePrixKg('${p.id}',${p.longueur||0},'${p.poids||''}')">
+            oninput="updatePrixKg('${p.id}',${p.longueur||0},'${p.poids||''}');calcMarge('${p.id}')">
         </div>
         <div style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:3px">
           <span>€/kg:</span><span id="fkg-${p.id}" style="font-weight:500;color:var(--text)">${prixKg}</span>
@@ -2022,6 +2290,7 @@ function renderFacings(prods){
         <div style="display:flex;align-items:center;gap:4px">
           <span style="font-size:11px;color:var(--text2)">PA HT€</span>
           <input type="number" id="fpa-${p.id}" value="${fd.pa_ht!=null?fd.pa_ht:''}" step="0.01" min="0" placeholder="auto"
+            oninput="calcMarge('${p.id}')"
             style="width:64px;padding:4px 6px;font-size:12px;border:0.5px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--accent)">
         </div>
         <div style="display:flex;align-items:center;gap:4px">
@@ -2066,6 +2335,20 @@ function calcPaHt(pid){
   if(pv&&mg){
     const pa=pv/(1+tva/100)*(1-mg/100);
     paEl.value=pa.toFixed(4);
+  }
+}
+
+function calcMarge(pid){
+  const pvEl=document.getElementById('fp-'+pid);
+  const paEl=document.getElementById('fpa-'+pid);
+  const mgEl=document.getElementById('fmg-'+pid);
+  if(!pvEl||!paEl||!mgEl)return;
+  const pvc=parseFloat(pvEl.value);
+  const pa=parseFloat(paEl.value);
+  if(pvc&&pa){
+    const pvht=pvc/1.055;          // PVC TTC -> HT (TVA 5,5% fixe)
+    const mg=(pvht-pa)/pvht*100;   // taux de marque
+    mgEl.value=mg.toFixed(1);
   }
 }
 
@@ -2166,7 +2449,7 @@ async function calcResults(){
   resultFrom='home';renderResults(currentReleve);showScreen('screen-results');
   setSyncStatus('syncing','Sauvegarde…');
   try{
-    const payload={id:currentReleve.id,enseigne:currentReleve.enseigne,magasin:currentReleve.magasin,magasin_id:currentReleve.magasin_id||null,centrale:currentReleve.centrale||null,type:currentReleve.type,typologie_magasin:currentReleve.typologie||null,date:currentReleve.date,total:currentReleve.total,facings:currentReleve.facings,results:currentReleve.results,user_id:currentUser.id,notes:currentReleve.notes||null,commentaire:currentReleve.commentaire||null,client_vu:currentReleve.client_vu||null,actions_menees:currentReleve.actions_menees||null};
+    const payload={id:currentReleve.id,enseigne:currentReleve.enseigne,magasin:currentReleve.magasin,magasin_id:currentReleve.magasin_id||null,centrale:currentReleve.centrale||null,type:currentReleve.type,typologie_magasin:currentReleve.typologie||null,date:currentReleve.date,total:currentReleve.total,facings:currentReleve.facings,results:currentReleve.results,user_id:currentUser.id,notes:currentReleve.notes||null,commentaire:currentReleve.commentaire||null,client_vu:currentReleve.client_vu||null,actions_menees:currentReleve.actions_menees||null,contacts_vus:currentReleve.contacts_vus||null};
     const{error}=await sb.from('releves').upsert([payload]);
     if(error)throw error;setSyncStatus('ok','Synchronisé');
   }catch(e){setSyncStatus('error','Erreur sync');}
@@ -2223,6 +2506,7 @@ function renderResults(r){
     visiteHtml=`<div style="background:var(--bg3);border-radius:var(--radius);padding:12px;margin-bottom:16px">
       <div style="font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px">Informations visite</div>
       ${r.client_vu!=null?`<div style="font-size:13px;margin-bottom:6px">Client vu : <strong style="color:${r.client_vu?'var(--success-text)':'var(--danger-text)'}">${r.client_vu?'Oui':'Non'}</strong></div>`:''}
+      ${(r.client_vu===true && r.contacts_vus && r.contacts_vus.length)?`<div style="font-size:13px;margin-bottom:6px">Personnes vues : <strong>${r.contacts_vus.map(c=>(c.prenom||'')+' '+(c.nom||'')+(c.poste?' ('+c.poste+')':'')).join(', ')}</strong></div>`:''}
       ${r.actions_menees&&r.actions_menees.length?`<div style="font-size:13px;margin-bottom:6px">Actions : ${r.actions_menees.map(a=>`<span class="badge" style="background:var(--info-bg);color:var(--info-text)">${a}</span>`).join(' ')}</div>`:''}
       ${r.commentaire?`<div style="font-size:13px;color:var(--text2);font-style:italic">"${r.commentaire}"</div>`:''}
     </div>`;
