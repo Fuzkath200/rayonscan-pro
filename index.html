@@ -234,6 +234,9 @@ canvas{display:block;margin:0 auto}
     <span id="sync-label-desktop">…</span>
   </div>
   <nav class="sidebar-nav" id="sidebar-nav">
+    <button class="sidebar-nav-item" id="snav-dashboard" onclick="desktopTab('dashboard')">
+      <i class="ti ti-chart-bar"></i> Dashboard DN
+    </button>
     <button class="sidebar-nav-item active" id="snav-releves" onclick="desktopTab('releves')">
       <i class="ti ti-clipboard-list"></i> Relevés
     </button>
@@ -284,6 +287,7 @@ canvas{display:block;margin:0 auto}
   </div>
   <div class="tabs" id="main-tabs">
     <button class="tab4 active" onclick="switchTab('releves',this)">Relevés</button>
+    <button class="tab4" onclick="switchTab('dashboard',this)">DN</button>
     <button class="tab4" id="tab-btn-equipe" style="display:none" onclick="switchTab('equipe',this)">Équipe</button>
     <button class="tab4" onclick="switchTab('enseignes',this)">Enseignes</button>
     <button class="tab4" onclick="switchTab('catalogue',this)">Catalogue</button>
@@ -297,6 +301,9 @@ canvas{display:block;margin:0 auto}
     <div id="equipe-metrics" class="metric-grid" style="margin-bottom:12px"></div>
     <div class="section-label">Relevés de l'équipe</div>
     <div id="equipe-list"></div>
+  </div>
+  <div id="tab-dashboard" style="display:none">
+    <div id="dashboard-content"></div>
   </div>
   <div id="tab-enseignes" style="display:none"><div id="enseignes-list"></div></div>
   <div id="tab-catalogue" style="display:none">
@@ -556,12 +563,17 @@ function desktopTab(tab){
   const activeBtn = document.getElementById('snav-'+tab);
   if(activeBtn) activeBtn.classList.add('active');
   // Titre
-  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales'};
+  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN'};
   document.getElementById('desktop-topbar-title').textContent = titles[tab]||tab;
   document.getElementById('desktop-back-btn').style.display = 'none';
   // Rendu du contenu
   const content = document.getElementById('desktop-content');
   content.innerHTML = '';
+  if(tab==='dashboard'){
+    content.innerHTML = '<div id="dashboard-content-desktop"></div>';
+    renderDashboard('dashboard-content-desktop');
+    return;
+  }
   // Récupère le contenu de l'onglet mobile et le clone dans desktop-content
   const tabEl = document.getElementById('tab-'+tab);
   if(tabEl){
@@ -883,12 +895,13 @@ async function init(){
     const btn=document.getElementById('tab-btn-equipe');
     if(btn)btn.style.display='';
   }
-  renderHome();initPhotoListener();if(window.innerWidth>=768)initDesktop();
+  renderHome();initPhotoListener();await loadDN();if(window.innerWidth>=768)initDesktop();
   }catch(e){
     setSyncStatus('error','Hors ligne');
     centrales=JSON.parse(localStorage.getItem('rsp_centrales')||'null')||JSON.parse(JSON.stringify(DEFAULT_CENTRALES));
     products=JSON.parse(localStorage.getItem('rsp_products')||'null')||JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
     releves=JSON.parse(localStorage.getItem('rsp_releves')||'[]');
+    loadDNLocal();
     renderHome();
   }
 }
@@ -927,7 +940,7 @@ function showScreen(id){
 function switchTab(tab,btn){
   document.querySelectorAll('.tab4').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  ['releves','equipe','enseignes','catalogue','centrales'].forEach(t=>{
+  ['releves','equipe','enseignes','catalogue','centrales','dashboard'].forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el)el.style.display=t===tab?'block':'none';
   });
@@ -935,6 +948,7 @@ function switchTab(tab,btn){
   if(tab==='enseignes')renderEnseignes();
   if(tab==='centrales')renderCentrales();
   if(tab==='equipe')renderEquipe();
+  if(tab==='dashboard')renderDashboard('dashboard-content');
 }
 
 function renderHome(){renderReleves();renderCatalogue();renderEnseignes();renderCentrales();}
@@ -978,6 +992,178 @@ async function renderEquipe(){
   }catch(e){el.innerHTML='<div class="empty">Erreur de chargement.</div>';}
 }
 
+// ========== DASHBOARD DN ==========
+function barRow(label,pct,n){
+  const c=dnColor(pct);
+  const w=Math.max(0,Math.min(100,pct));
+  return `<div style="margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">
+      <span style="font-weight:500">${label}</span>
+      <span style="color:${c};font-weight:600">${Math.round(pct)}% <span style="color:var(--text3);font-weight:400">(${n})</span></span>
+    </div>
+    <div style="height:7px;background:var(--bg3);border-radius:4px;overflow:hidden"><div style="height:100%;width:${w}%;background:${c}"></div></div>
+  </div>`;
+}
+function derniersParUserMagasin(list){
+  const by={};
+  (list||[]).forEach(r=>{
+    if(!r.magasin) return;
+    const k=(r.user_id||"?")+"|"+r.magasin;
+    if(!by[k]) by[k]=r;
+    else{
+      const da=(by[k].date||"").split("/").reverse().join("-");
+      const db=(r.date||"").split("/").reverse().join("-");
+      if(db>da) by[k]=r;
+    }
+  });
+  return Object.values(by);
+}
+async function renderDashboard(containerId){
+  const el=document.getElementById(containerId);
+  if(!el) return;
+  el.innerHTML='<div class="empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>Calcul de la DN…</div>';
+
+  const isManager = currentProfile && (currentProfile.role==="directeur"||currentProfile.role==="admin");
+  let workReleves = releves.slice();
+  const userNames = {};
+  if(currentUser && currentProfile) userNames[currentUser.id]=((currentProfile.prenom||"")+" "+(currentProfile.nom||"")).trim()||"Moi";
+
+  if(isManager){
+    try{
+      const {data:teamProfiles}=await sb.from("profiles").select("*").eq("manager_id",currentUser.id);
+      const ids=(teamProfiles||[]).map(p=>p.id);
+      (teamProfiles||[]).forEach(p=>{ userNames[p.id]=((p.prenom||"")+" "+(p.nom||"")).trim()||"—"; });
+      const allIds=[currentUser.id].concat(ids);
+      const {data:teamReleves}=await sb.from("releves").select("*").in("user_id",allIds);
+      if(teamReleves && teamReleves.length) workReleves=teamReleves;
+    }catch(e){}
+  }
+
+  const theoriqueVide = Object.keys(dnTheorique).length===0;
+  const configBtn = isManager
+    ? `<button class="btn-sm" onclick="openDNConfig()" style="background:var(--bg3);color:var(--text);border:0.5px solid var(--border)"><i class="ti ti-settings"></i> Configurer le théorique</button>`
+    : "";
+
+  const glob = aggregeDN(workReleves);
+
+  // Par enseigne
+  const parEns={};
+  glob.derniers.forEach(r=>{
+    const d=calcDNReleve(r);
+    if(d.dn==null) return;
+    const e=r.enseigne||"—";
+    if(!parEns[e]) parEns[e]={sum:0,n:0};
+    parEns[e].sum+=d.dn; parEns[e].n++;
+  });
+  const ensRows=Object.keys(parEns).sort((a,b)=>(parEns[b].sum/parEns[b].n)-(parEns[a].sum/parEns[a].n))
+    .map(e=>barRow(e,parEns[e].sum/parEns[e].n,parEns[e].n)).join("");
+
+  // Par commercial (manager seulement)
+  let commSection="";
+  if(isManager){
+    const parComm={};
+    derniersParUserMagasin(workReleves).forEach(r=>{
+      const d=calcDNReleve(r);
+      if(d.dn==null) return;
+      const u=r.user_id||"?";
+      if(!parComm[u]) parComm[u]={sum:0,n:0};
+      parComm[u].sum+=d.dn; parComm[u].n++;
+    });
+    const commRows=Object.keys(parComm).sort((a,b)=>(parComm[b].sum/parComm[b].n)-(parComm[a].sum/parComm[a].n))
+      .map(u=>barRow(userNames[u]||"Commercial",parComm[u].sum/parComm[u].n,parComm[u].n)).join("");
+    if(commRows) commSection=`<div class="section-label">DN par commercial</div><div class="card" style="padding:12px">${commRows}</div>`;
+  }
+
+  // Détail par magasin
+  const detRows = glob.derniers.slice().sort((a,b)=>{
+    const da=calcDNReleve(a).dn, db=calcDNReleve(b).dn;
+    return (db==null?-1:db)-(da==null?-1:da);
+  }).filter(r=>calcDNReleve(r).dn!=null).map(r=>{
+    const d=calcDNReleve(r);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:0.5px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.magasin||"—"}</div>
+        <div style="font-size:11px;color:var(--text3)">${d.key||"—"} · ${d.saison==="ete"?"été":"hiver"} · ${d.present}/${d.cible} réfs</div>
+      </div>
+      <div style="font-size:14px"><strong style="color:${dnColor(d.dn)}">${Math.round(d.dn)}%</strong></div>
+    </div>`;
+  }).join("");
+
+  const dnGlobTxt = glob.moyenne!=null?Math.round(glob.moyenne)+"%":"—";
+
+  el.innerHTML = `
+    ${theoriqueVide?`<div class="card" style="padding:14px;margin-bottom:12px;background:var(--info-bg);color:var(--info-text)">
+      <div style="font-weight:500;margin-bottom:4px">Aucun théorique configuré</div>
+      <div style="font-size:13px">Définissez le nombre de références Azura attendues par centrale pour calculer la DN.</div>
+      ${isManager?`<div style="margin-top:10px">${configBtn}</div>`:""}
+    </div>`:""}
+    <div class="metric-grid" style="margin-bottom:14px">
+      <div class="metric"><div class="metric-label">DN Azura moyenne</div><div class="metric-value" style="color:${dnColor(glob.moyenne)}">${dnGlobTxt}</div><div class="metric-sub">${glob.n} magasin${glob.n>1?"s":""} évalué${glob.n>1?"s":""}</div></div>
+      <div class="metric"><div class="metric-label">Réfs présentes</div><div class="metric-value">${glob.presentTot}<span style="font-size:14px;font-weight:400">/${glob.cibleTot}</span></div><div class="metric-sub">sur dernier relevé</div></div>
+    </div>
+    ${(!theoriqueVide&&isManager)?`<div style="margin-bottom:14px">${configBtn}</div>`:""}
+    ${ensRows?`<div class="section-label">DN par enseigne</div><div class="card" style="padding:12px">${ensRows}</div>`:""}
+    ${commSection}
+    ${detRows?`<div class="section-label">Détail par magasin (dernier relevé)</div><div class="card" style="padding:0 12px">${detRows}</div>`:(theoriqueVide?"":`<div class="empty" style="margin-top:12px"><i class="ti ti-clipboard-list"></i>Aucun relevé rattaché à une centrale avec théorique.</div>`)}
+  `;
+}
+
+function openDNConfig(){
+  const keys=centraleKeysAll();
+  const rows=keys.map(k=>{
+    const th=dnTheorique[k]||{ete:0,hiver:0};
+    const safe=k.replace(/"/g,"&quot;");
+    return `<div style="display:grid;grid-template-columns:1fr 60px 60px;gap:6px;align-items:center;margin-bottom:6px">
+      <div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${safe}">${k}</div>
+      <input type="number" min="0" class="dn-cfg" data-key="${safe}" data-saison="ete" value="${th.ete||0}" style="width:100%;padding:6px;text-align:center;border:0.5px solid var(--border);border-radius:8px;background:var(--bg)">
+      <input type="number" min="0" class="dn-cfg" data-key="${safe}" data-saison="hiver" value="${th.hiver||0}" style="width:100%;padding:6px;text-align:center;border:0.5px solid var(--border);border-radius:8px;background:var(--bg)">
+    </div>`;
+  }).join("");
+  const c=document.getElementById("modal-content");
+  c.innerHTML=`
+    <h3 style="margin-bottom:4px">Théorique DN</h3>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px">Nombre de références Azura attendues par centrale.</p>
+    <div style="display:grid;grid-template-columns:1fr 60px 60px;gap:6px;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px">
+      <div>Centrale</div><div style="text-align:center">Été</div><div style="text-align:center">Hiver</div>
+    </div>
+    <div style="max-height:36vh;overflow-y:auto;margin-bottom:14px">${rows||'<div class="empty">Aucune centrale.</div>'}</div>
+    <div class="section-label" style="margin-top:0">Saison été (mois de…à)</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+      <input type="number" id="dn-ete-debut" min="1" max="12" value="${dnConfig.ete_debut}" style="width:60px;padding:6px;text-align:center;border:0.5px solid var(--border);border-radius:8px;background:var(--bg)">
+      <span style="font-size:13px;color:var(--text2)">à</span>
+      <input type="number" id="dn-ete-fin" min="1" max="12" value="${dnConfig.ete_fin}" style="width:60px;padding:6px;text-align:center;border:0.5px solid var(--border);border-radius:8px;background:var(--bg)">
+      <span style="font-size:12px;color:var(--text3)">le reste = hiver</span>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" onclick="saveDNConfig()" style="flex:1"><i class="ti ti-device-floppy"></i> Enregistrer</button>
+      <button class="btn-sm" onclick="closeModal()" style="background:var(--bg3);color:var(--text);border:0.5px solid var(--border)">Annuler</button>
+    </div>`;
+  document.getElementById("modal-overlay").classList.add("open");
+}
+
+async function saveDNConfig(){
+  const map={};
+  document.querySelectorAll(".dn-cfg").forEach(inp=>{
+    const k=inp.dataset.key;
+    if(!map[k]) map[k]={ete:0,hiver:0};
+    map[k][inp.dataset.saison]=parseInt(inp.value,10)||0;
+  });
+  dnTheorique=map;
+  dnConfig.ete_debut=parseInt(document.getElementById("dn-ete-debut").value,10)||5;
+  dnConfig.ete_fin=parseInt(document.getElementById("dn-ete-fin").value,10)||10;
+  saveDNLocal();
+  closeModal();
+  setSyncStatus("syncing","Sauvegarde DN…");
+  try{
+    const rows=Object.keys(map).map(k=>({centrale:k,cible_ete:map[k].ete,cible_hiver:map[k].hiver}));
+    if(rows.length){ const {error}=await sb.from("dn_theorique").upsert(rows,{onConflict:"centrale"}); if(error) throw error; }
+    const {error:e2}=await sb.from("dn_config").upsert([{id:1,ete_debut:dnConfig.ete_debut,ete_fin:dnConfig.ete_fin}],{onConflict:"id"});
+    if(e2) throw e2;
+    setSyncStatus("ok","Synchronisé");
+  }catch(e){ setSyncStatus("error","DN enregistrée en local"); }
+  renderDashboard(desktopMode?"dashboard-content-desktop":"dashboard-content");
+}
+
 // LOGOS
 const LOGOS={'Intermarché Super':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Intermarch%C3%A9_logo_.svg.png','Intermarché Hyper':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Intermarch%C3%A9_logo_.svg.png','Carrefour':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Logo_Carrefour.svg.png','Carrefour Market':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/logo_carrefour_market.png','Leclerc':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Leclerc_logo.svg.webp','Auchan':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Logo_Auchan_.svg.png','Super U':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/U_commer%C3%A7ants_logo.svg.png','Hyper U':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/U_commer%C3%A7ants_logo.svg.png'};
 const ENSEIGNE_COLORS={'Intermarché Super':'#E20025','Intermarché Hyper':'#E20025','Carrefour':'#004A97','Carrefour Market':'#004A97','Leclerc':'#003189','Auchan':'#CC0000','Super U':'#E30613','Hyper U':'#E30613'};
@@ -989,6 +1175,117 @@ function getEnseigneAvatar(enseigne,size=48){
   const initials=ENSEIGNE_INITIALS[enseigne]||enseigne.substring(0,2).toUpperCase();
   if(url)return`<img src="${url}" style="width:${size}px;height:${size}px;border-radius:${size*0.25}px;object-fit:contain;background:white;padding:4px;flex-shrink:0" alt="${enseigne}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div style="display:none;width:${size}px;height:${size}px;border-radius:${size*0.25}px;background:${color};align-items:center;justify-content:center;color:white;font-size:${size*0.3}px;font-weight:700;flex-shrink:0">${initials}</div>`;
   return`<div style="width:${size}px;height:${size}px;border-radius:${size*0.25}px;background:${color};display:flex;align-items:center;justify-content:center;color:white;font-size:${size*0.3}px;font-weight:700;flex-shrink:0">${initials}</div>`;
+}
+
+// ========== DN (Distribution Numerique) ==========
+let dnTheorique = {};                       // { centraleKey: {ete:int, hiver:int} }
+let dnConfig = { ete_debut:5, ete_fin:10 }; // mois (1-12) de debut/fin de saison ete, inclus
+
+function loadDNLocal(){
+  try{ const t=localStorage.getItem("rsp_dn_theorique"); if(t) dnTheorique=JSON.parse(t); }catch(e){}
+  try{ const c=localStorage.getItem("rsp_dn_config"); if(c) dnConfig=Object.assign(dnConfig,JSON.parse(c)); }catch(e){}
+}
+function saveDNLocal(){
+  localStorage.setItem("rsp_dn_theorique",JSON.stringify(dnTheorique));
+  localStorage.setItem("rsp_dn_config",JSON.stringify(dnConfig));
+}
+async function loadDN(){
+  loadDNLocal();
+  try{
+    const {data,error}=await sb.from("dn_theorique").select("*");
+    if(!error && data && data.length){
+      const map={};
+      data.forEach(row=>{ map[row.centrale]={ete:row.cible_ete||0,hiver:row.cible_hiver||0}; });
+      dnTheorique=map;
+    }
+  }catch(e){}
+  try{
+    const {data,error}=await sb.from("dn_config").select("*").limit(1);
+    if(!error && data && data.length){
+      const c=data[0];
+      if(c.ete_debut!=null) dnConfig.ete_debut=c.ete_debut;
+      if(c.ete_fin!=null) dnConfig.ete_fin=c.ete_fin;
+    }
+  }catch(e){}
+  saveDNLocal();
+}
+
+function getSaisonReleve(dateStr){
+  // date au format "dd/mm/yyyy"
+  let mois;
+  const parts=String(dateStr||"").split("/");
+  if(parts.length===3) mois=parseInt(parts[1],10);
+  if(isNaN(mois)||!mois) mois=(new Date()).getMonth()+1;
+  const deb=dnConfig.ete_debut, fin=dnConfig.ete_fin;
+  let estEte;
+  if(deb<=fin) estEte=(mois>=deb && mois<=fin);
+  else estEte=(mois>=deb || mois<=fin); // saison a cheval sur l annee
+  return estEte ? "ete" : "hiver";
+}
+function centraleKeyReleve(r){
+  const c=(r.centrale||"").trim();
+  return c ? c : (r.enseigne||"").trim();
+}
+function estMarqueAzura(marque){
+  return !!marque && marque.toLowerCase().indexOf("azura")!==-1;
+}
+function nbRefsAzuraReleve(r){
+  const seen={};
+  (r.results||[]).forEach(l=>{
+    if((l.count||0)<=0) return;
+    const p=products.find(x=>x.id===l.pid);
+    if(p && estMarqueAzura(p.marque)) seen[l.pid]=true;
+  });
+  return Object.keys(seen).length;
+}
+function calcDNReleve(r){
+  const key=centraleKeyReleve(r);
+  const saison=getSaisonReleve(r.date);
+  const th=dnTheorique[key];
+  const cible=th ? (saison==="ete"?th.ete:th.hiver) : 0;
+  const present=nbRefsAzuraReleve(r);
+  if(!cible || cible<=0) return {key,saison,present,cible:0,dn:null};
+  return {key,saison,present,cible,dn:(present/cible)*100};
+}
+function derniersRelevesParMagasin(list){
+  const by={};
+  (list||releves).forEach(r=>{
+    const k=r.magasin||"";
+    if(!k) return;
+    if(!by[k]) by[k]=r;
+    else{
+      const da=(by[k].date||"").split("/").reverse().join("-");
+      const db=(r.date||"").split("/").reverse().join("-");
+      if(db>da) by[k]=r;
+    }
+  });
+  return Object.values(by);
+}
+function aggregeDN(list){
+  const derniers=derniersRelevesParMagasin(list);
+  let sum=0,n=0,presentTot=0,cibleTot=0;
+  derniers.forEach(r=>{
+    const d=calcDNReleve(r);
+    if(d.dn!=null){ sum+=d.dn; n++; presentTot+=d.present; cibleTot+=d.cible; }
+  });
+  return {moyenne:n?sum/n:null, n, presentTot, cibleTot, derniers};
+}
+function dnColor(dn){
+  if(dn==null) return "var(--text3)";
+  if(dn>=80) return "var(--success-text)";
+  if(dn>=50) return "#d97706";
+  return "var(--danger-text)";
+}
+function centraleKeysAll(){
+  // Liste des cles theoriques: noms de centrales + enseignes sans centrale
+  const keys={};
+  centrales.forEach(c=>{ if(c.nom) keys[c.nom]=true; });
+  const enseignesAvecCentrale={};
+  centrales.forEach(c=>{ enseignesAvecCentrale[c.enseigne]=true; });
+  // enseignes presentes dans les produits / releves sans centrale dediee
+  Object.keys(ENSEIGNE_COLORS||{}).forEach(e=>{ if(!enseignesAvecCentrale[e]) keys[e]=true; });
+  releves.forEach(r=>{ const k=centraleKeyReleve(r); if(k) keys[k]=true; });
+  return Object.keys(keys).sort();
 }
 
 // FICHE CLIENT
@@ -1030,6 +1327,7 @@ function showFicheClient(magasin, enseigne){
   // Dernière visite
   if(clientReleves.length) {
     const last = clientReleves[clientReleves.length - 1];
+    const dnInfo = calcDNReleve(last);
     const azuraLines = (last.results||[]).filter(l => {
       const p = products.find(x=>x.id===l.pid);
       return p && p.marque && p.marque.toLowerCase().includes('azura');
@@ -1043,6 +1341,7 @@ function showFicheClient(magasin, enseigne){
         ${last.actions_menees&&last.actions_menees.length?`<div style="font-size:13px;margin-bottom:6px">Actions : ${last.actions_menees.map(a=>`<span class="badge" style="background:var(--info-bg);color:var(--info-text)">${a}</span>`).join(' ')}</div>`:''}
         ${last.commentaire?`<div style="font-size:13px;color:var(--text2);font-style:italic;margin-bottom:6px">"${last.commentaire}"</div>`:'<div style="font-size:13px;color:var(--text3);font-style:italic;margin-bottom:6px">Aucun commentaire</div>'}
         <div style="font-size:13px">Linéaire Azura : <strong style="color:var(--accent)">${azuraML.toFixed(2)}m</strong> · Total : <strong>${(last.total||0).toFixed(2)}m</strong></div>
+        <div style="font-size:13px;margin-top:6px">DN Azura : ${dnInfo.dn!=null?`<strong style="color:${dnColor(dnInfo.dn)}">${Math.round(dnInfo.dn)}%</strong> <span style="color:var(--text3)">(${dnInfo.present}/${dnInfo.cible} réfs · ${dnInfo.saison==="ete"?"été":"hiver"})</span>`:`<span style="color:var(--text3)">— pas de théorique pour ${dnInfo.key||"cette centrale"}</span>`}</div>
       </div>`;
   } else {
     document.getElementById('client-last-visit').innerHTML = '';
