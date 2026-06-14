@@ -20,8 +20,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .topbar h2{font-size:17px;font-weight:500;flex:1}
 .back-btn{background:none;border:none;cursor:pointer;color:var(--text2);font-size:22px;padding:2px 8px 2px 0;display:flex;align-items:center}
 .logo-badge{width:32px;height:32px;border-radius:8px;background:#1a1a18;display:flex;align-items:center;justify-content:center;color:white;font-size:16px}
-.tabs{display:flex;border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:18px}
-.tab4{flex:1;padding:8px 2px;font-size:12px;font-weight:500;background:none;border:none;cursor:pointer;color:var(--text2);font-family:inherit;transition:all 0.15s}
+.tabs{display:flex;border:0.5px solid var(--border);border-radius:var(--radius);overflow-x:auto;overflow-y:hidden;margin-bottom:18px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.tabs::-webkit-scrollbar{display:none}
+.tab4{flex:1 0 auto;min-width:70px;white-space:nowrap;padding:8px 10px;font-size:12px;font-weight:500;background:none;border:none;cursor:pointer;color:var(--text2);font-family:inherit;transition:all 0.15s}
 .tab4.active{background:#1a1a18;color:white}
 .card{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:0 14px;margin-bottom:12px}
 .card-inner{padding:14px}
@@ -569,6 +570,9 @@ function initDesktop(){
 function desktopTab(tab){
   desktopCurrentView = tab;
   desktopBackTarget = null;
+  // Fermer un éventuel écran de détail (overlay) avant d'afficher l'onglet
+  document.querySelectorAll('.desktop-visible').forEach(el=>el.classList.remove('desktop-visible'));
+  desktopCurrentScreen = null;
   // Mise à jour nav
   document.querySelectorAll('.sidebar-nav-item').forEach(el => el.classList.remove('active'));
   const activeBtn = document.getElementById('snav-'+tab);
@@ -952,6 +956,7 @@ function showScreen(id){
   }
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   const el=document.getElementById(id);
+  if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();
   if(el){el.classList.add('active');window.scrollTo(0,0);}
   if(id==='screen-home')renderHome();
 }
@@ -1356,16 +1361,19 @@ function magasinsClients(){
   releves.forEach(r=>{ if(r.magasin && !map[r.magasin]) map[r.magasin]={magasin:r.magasin, enseigne:r.enseigne}; });
   return Object.values(map).sort((a,b)=>a.magasin.localeCompare(b.magasin));
 }
-function renderClients(containerId, filter){
-  const el=document.getElementById(containerId);
-  if(!el) return;
+function openClientPage(magasin, enseigne){
+  if(typeof desktopMode!=="undefined" && desktopMode) desktopFicheClient(magasin, enseigne);
+  else showFicheClient(magasin, enseigne);
+}
+function clientsListHtml(filter){
   const q=(filter||"").toLowerCase().trim();
   let list=magasinsClients();
   if(q) list=list.filter(x=>x.magasin.toLowerCase().includes(q)||(x.enseigne||"").toLowerCase().includes(q));
-  const rows = list.length ? list.map(x=>{
+  if(!list.length) return `<div class="empty"><i class="ti ti-users"></i>Aucun magasin${q?" trouvé":""}. Fais un relevé pour qu\'il apparaisse ici.</div>`;
+  return list.map(x=>{
     const nb=contactsDuMagasin(x.magasin).length;
     const safeM=x.magasin.replace(/'/g,"\\'"); const safeE=(x.enseigne||"").replace(/'/g,"\\'");
-    return `<div class="releve-card" style="cursor:pointer" onclick="showFicheClient('${safeM}','${safeE}')">
+    return `<div class="releve-card" style="cursor:pointer" onclick="openClientPage('${safeM}','${safeE}')">
       ${getEnseigneAvatar(x.enseigne,40)}
       <div class="releve-info">
         <div class="releve-name">${x.magasin}</div>
@@ -1373,14 +1381,20 @@ function renderClients(containerId, filter){
       </div>
       <i class="ti ti-chevron-right" style="color:var(--text3);font-size:18px;flex-shrink:0"></i>
     </div>`;
-  }).join("") : `<div class="empty"><i class="ti ti-users"></i>Aucun magasin. Fais un relevé pour qu\\'il apparaisse ici.</div>`;
+  }).join("");
+}
+function filterClientsList(containerId, val){
+  const lst=document.getElementById(containerId+"-list");
+  if(lst) lst.innerHTML=clientsListHtml(val);
+}
+function renderClients(containerId, filter){
+  const el=document.getElementById(containerId);
+  if(!el) return;
   el.innerHTML = `
     <div class="form-group" style="margin-bottom:12px">
-      <input type="text" id="${containerId}-search" placeholder="Rechercher un magasin…" value="${(filter||'').replace(/"/g,'&quot;')}" oninput="renderClients('${containerId}',this.value)" style="width:100%;padding:10px;border:0.5px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:14px">
+      <input type="text" id="${containerId}-search" placeholder="Rechercher un magasin…" value="${(filter||'').replace(/"/g,'&quot;')}" oninput="filterClientsList('${containerId}',this.value)" style="width:100%;padding:10px;border:0.5px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:14px">
     </div>
-    ${rows}`;
-  const s=document.getElementById(containerId+"-search");
-  if(s){ const v=s.value; s.focus(); s.setSelectionRange(v.length,v.length); }
+    <div id="${containerId}-list">${clientsListHtml(filter||"")}</div>`;
 }
 
 // ----- Contacts dans le formulaire de relevé -----
@@ -2207,7 +2221,7 @@ function startFacings(){
     currentReleve.enseigne=enseigne;currentReleve.magasin=magasin;currentReleve.centrale=centrale;
     currentReleve.type=document.getElementById('r-type').value;currentReleve.typologie=document.getElementById('r-typologie').value;currentReleve.date=document.getElementById('r-date').value.trim()||today;
     facings={};products.forEach(p=>{facings[p.id]={pid:p.id,count:0};});
-    (currentReleve.results||[]).forEach(r=>{if(facings[r.pid])facings[r.pid].count=r.count;});
+    (currentReleve.results||[]).forEach(r=>{if(facings[r.pid])facings[r.pid]={...facings[r.pid],...r};});
     const localPhotos=localStorage.getItem('rsp_photos_'+currentReleve.id);
     if(localPhotos)photos=JSON.parse(localPhotos);else photos=[];
     renderPhotoGallery();
