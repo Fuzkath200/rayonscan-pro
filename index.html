@@ -241,6 +241,9 @@ canvas{display:block;margin:0 auto}
     <button class="sidebar-nav-item" id="snav-clients" onclick="desktopTab('clients')">
       <i class="ti ti-users"></i> Clients
     </button>
+    <button class="sidebar-nav-item" id="snav-activite" onclick="desktopTab('activite')">
+      <i class="ti ti-activity"></i> Activité équipe
+    </button>
     <button class="sidebar-nav-item active" id="snav-releves" onclick="desktopTab('releves')">
       <i class="ti ti-clipboard-list"></i> Relevés
     </button>
@@ -292,6 +295,7 @@ canvas{display:block;margin:0 auto}
   <div class="tabs" id="main-tabs">
     <button class="tab4 active" onclick="switchTab('releves',this)">Relevés</button>
     <button class="tab4" onclick="switchTab('dashboard',this)">DN</button>
+    <button class="tab4" onclick="switchTab('activite',this)">Activité</button>
     <button class="tab4" onclick="switchTab('clients',this)">Clients</button>
     <button class="tab4" id="tab-btn-equipe" style="display:none" onclick="switchTab('equipe',this)">Équipe</button>
     <button class="tab4" onclick="switchTab('enseignes',this)">Enseignes</button>
@@ -310,6 +314,7 @@ canvas{display:block;margin:0 auto}
   <div id="tab-dashboard" style="display:none">
     <div id="dashboard-content"></div>
   </div>
+  <div id="tab-activite" style="display:none"><div id="activite-content"></div></div>
   <div id="tab-clients" style="display:none"><div id="clients-content"></div></div>
   <div id="tab-enseignes" style="display:none"><div id="enseignes-list"></div></div>
   <div id="tab-catalogue" style="display:none">
@@ -578,7 +583,7 @@ function desktopTab(tab){
   const activeBtn = document.getElementById('snav-'+tab);
   if(activeBtn) activeBtn.classList.add('active');
   // Titre
-  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients'};
+  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe'};
   document.getElementById('desktop-topbar-title').textContent = titles[tab]||tab;
   document.getElementById('desktop-back-btn').style.display = 'none';
   // Rendu du contenu
@@ -592,6 +597,11 @@ function desktopTab(tab){
   if(tab==='clients'){
     content.innerHTML = '<div id="clients-content-desktop"></div>';
     renderClients('clients-content-desktop','');
+    return;
+  }
+  if(tab==='activite'){
+    content.innerHTML = '<div id="activite-content-desktop"></div>';
+    renderActivite('activite-content-desktop');
     return;
   }
   // Récupère le contenu de l'onglet mobile et le clone dans desktop-content
@@ -917,7 +927,7 @@ async function init(){
     const btn=document.getElementById('tab-btn-equipe');
     if(btn)btn.style.display='';
   }
-  renderHome();initPhotoListener();await loadDN();await loadContacts();if(window.innerWidth>=768)initDesktop();
+  renderHome();initPhotoListener();await loadDN();await loadContacts();await loadJoursTerrain();if(window.innerWidth>=768)initDesktop();
   }catch(e){
     setSyncStatus('error','Hors ligne');
     centrales=JSON.parse(localStorage.getItem('rsp_centrales')||'null')||JSON.parse(JSON.stringify(DEFAULT_CENTRALES));
@@ -925,6 +935,7 @@ async function init(){
     releves=JSON.parse(localStorage.getItem('rsp_releves')||'[]');
     loadDNLocal();
     loadContactsLocal();
+    loadJoursTerrainLocal();
     renderHome();
   }
 }
@@ -964,7 +975,7 @@ function showScreen(id){
 function switchTab(tab,btn){
   document.querySelectorAll('.tab4').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients'].forEach(t=>{
+  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients','activite'].forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el)el.style.display=t===tab?'block':'none';
   });
@@ -974,6 +985,7 @@ function switchTab(tab,btn){
   if(tab==='equipe')renderEquipe();
   if(tab==='dashboard')renderDashboard('dashboard-content');
   if(tab==='clients')renderClients('clients-content','');
+  if(tab==='activite')renderActivite('activite-content');
 }
 
 function renderHome(){renderReleves();renderCatalogue();renderEnseignes();renderCentrales();}
@@ -1421,6 +1433,261 @@ function refreshReleveContacts(){
 }
 function getSelectedContacts(){
   return Array.from(document.querySelectorAll(".r-contact")).filter(cb=>cb.checked).map(cb=>({prenom:cb.dataset.prenom,nom:cb.dataset.nom,poste:cb.dataset.poste||null}));
+}
+
+// ========== DASHBOARD ACTIVITÉ ÉQUIPE ==========
+let activiteData = null;          // {releves:[], names:{}, isManager:bool}
+let activiteFilters = {annee:"", mois:"", semaine:"", commercial:"", enseigne:"", centrale:""};
+let joursTerrain = {};            // "userId|weekKey" -> nb_jours (override manuel)
+let activiteContainerId = "activite-content";
+const MOIS_LABELS = ["","Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+
+function isoWeekKey(dateStr){
+  const p=String(dateStr||"").split("/");
+  if(p.length!==3) return null;
+  const d=new Date(Date.UTC(+p[2], +p[1]-1, +p[0]));
+  if(isNaN(d.getTime())) return null;
+  const dayNum=(d.getUTCDay()+6)%7;
+  d.setUTCDate(d.getUTCDate()-dayNum+3);
+  const firstTh=new Date(Date.UTC(d.getUTCFullYear(),0,4));
+  const week=1+Math.round(((d-firstTh)/86400000-3+((firstTh.getUTCDay()+6)%7))/7);
+  return d.getUTCFullYear()+"-S"+String(week).padStart(2,"0");
+}
+function semaineLabel(key){ if(!key) return ""; const m=String(key).match(/^(\d+)-S(\d+)$/); return m?("Sem "+(+m[2])+" · "+m[1]):key; }
+
+function loadJoursTerrainLocal(){ try{const t=localStorage.getItem("rsp_jours_terrain"); if(t) joursTerrain=JSON.parse(t);}catch(e){} }
+function saveJoursTerrainLocal(){ localStorage.setItem("rsp_jours_terrain",JSON.stringify(joursTerrain)); }
+async function loadJoursTerrain(){
+  loadJoursTerrainLocal();
+  try{
+    const {data,error}=await sb.from("jours_terrain").select("*");
+    if(!error && data){ const m={}; data.forEach(r=>{ m[r.user_id+"|"+r.semaine]=r.nb_jours; }); joursTerrain=m; saveJoursTerrainLocal(); }
+  }catch(e){}
+}
+async function setJoursTerrain(userId, weekKey, val){
+  const key=userId+"|"+weekKey;
+  const n=parseFloat(String(val).replace(",","."));
+  if(isNaN(n)||n<0){ delete joursTerrain[key]; } else { joursTerrain[key]=n; }
+  saveJoursTerrainLocal();
+  setSyncStatus("syncing","Sauvegarde jours…");
+  try{
+    if(isNaN(n)||n<0){ await sb.from("jours_terrain").delete().eq("user_id",userId).eq("semaine",weekKey); }
+    else { const {error}=await sb.from("jours_terrain").upsert([{id:key,user_id:userId,semaine:weekKey,nb_jours:n}],{onConflict:"id"}); if(error) throw error; }
+    setSyncStatus("ok","Synchronisé");
+  }catch(e){ setSyncStatus("error","Jours enregistrés en local"); }
+  renderActiviteBody();
+}
+
+async function loadActiviteData(){
+  const isManager = currentProfile && (currentProfile.role==="directeur"||currentProfile.role==="admin");
+  const names={};
+  if(currentUser&&currentProfile) names[currentUser.id]=((currentProfile.prenom||"")+" "+(currentProfile.nom||"")).trim()||"Moi";
+  let list=(releves||[]).map(r=>({...r, user_id:r.user_id||(currentUser&&currentUser.id)}));
+  if(isManager){
+    try{
+      const {data:tp}=await sb.from("profiles").select("*").eq("manager_id",currentUser.id);
+      const ids=(tp||[]).map(p=>p.id);
+      (tp||[]).forEach(p=>{ names[p.id]=((p.prenom||"")+" "+(p.nom||"")).trim()||"—"; });
+      const allIds=[currentUser.id].concat(ids);
+      const {data:tr}=await sb.from("releves").select("*").in("user_id",allIds);
+      if(tr&&tr.length) list=tr;
+    }catch(e){}
+  }
+  activiteData={releves:list, names, isManager};
+}
+
+function activiteOptions(){
+  const list=(activiteData&&activiteData.releves)||[];
+  const annees=new Set(), mois=new Set(), semaines=new Set(), enseignes=new Set(), centrales=new Set(), users=new Set();
+  list.forEach(r=>{
+    const p=String(r.date||"").split("/");
+    if(p[2]) annees.add(p[2]);
+    if(p[1]) mois.add(p[1]);
+    const wk=isoWeekKey(r.date); if(wk) semaines.add(wk);
+    if(r.enseigne) enseignes.add(r.enseigne);
+    if(r.centrale) centrales.add(r.centrale);
+    if(r.user_id) users.add(r.user_id);
+  });
+  return {
+    annees:[...annees].sort().reverse(),
+    mois:[...mois].sort(),
+    semaines:[...semaines].sort().reverse(),
+    enseignes:[...enseignes].sort(),
+    centrales:[...centrales].sort(),
+    users:[...users]
+  };
+}
+
+function activiteFiltered(){
+  const list=(activiteData&&activiteData.releves)||[];
+  const f=activiteFilters;
+  return list.filter(r=>{
+    const p=String(r.date||"").split("/");
+    if(f.annee && p[2]!==f.annee) return false;
+    if(f.mois && p[1]!==f.mois) return false;
+    if(f.semaine && isoWeekKey(r.date)!==f.semaine) return false;
+    if(f.commercial && (r.user_id||"")!==f.commercial) return false;
+    if(f.enseigne && r.enseigne!==f.enseigne) return false;
+    if(f.centrale && (r.centrale||"")!==f.centrale) return false;
+    return true;
+  });
+}
+
+function activiteStats(filtered){
+  const byUser={};
+  filtered.forEach(r=>{
+    const u=r.user_id||"?";
+    if(!byUser[u]) byUser[u]={visites:0, magasins:new Set(), avecContact:0, weeks:{}};
+    const s=byUser[u];
+    s.visites++;
+    if(r.magasin) s.magasins.add(r.magasin);
+    if(r.client_vu===true) s.avecContact++;
+    const wk=isoWeekKey(r.date);
+    if(wk){ if(!s.weeks[wk]) s.weeks[wk]=new Set(); if(r.date) s.weeks[wk].add(r.date); }
+  });
+  return byUser;
+}
+function joursEffectifs(userId, weeks){
+  let sum=0;
+  Object.keys(weeks).forEach(wk=>{
+    const ov=joursTerrain[userId+"|"+wk];
+    sum += (ov!=null ? ov : weeks[wk].size);
+  });
+  return sum;
+}
+
+function gaugeSvg(pct){
+  pct=Math.max(0,Math.min(100,isNaN(pct)?0:pct));
+  const r=64, cx=80, cy=80, sw=16, len=Math.PI*r;
+  const col=dnColor(pct);
+  const path=`M ${cx-r} ${cy} A ${r} ${r} 0 0 1 ${cx+r} ${cy}`;
+  return `<svg viewBox="0 0 160 96" style="width:100%;max-width:200px;height:auto;display:block;margin:0 auto">
+    <path d="${path}" fill="none" stroke="var(--bg3)" stroke-width="${sw}" stroke-linecap="round"/>
+    <path d="${path}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linecap="round" stroke-dasharray="${(len*pct/100).toFixed(1)} ${len.toFixed(1)}"/>
+    <text x="${cx}" y="${cy-6}" text-anchor="middle" style="font-size:26px;font-weight:700;fill:${col}">${Math.round(pct)}%</text>
+    <text x="8" y="94" style="font-size:9px;fill:var(--text3)">0%</text>
+    <text x="152" y="94" text-anchor="end" style="font-size:9px;fill:var(--text3)">100%</text>
+  </svg>`;
+}
+
+function activiteSelect(label, key, options, current, labelFn){
+  const opts=`<option value="">Tout</option>`+options.map(o=>`<option value="${String(o).replace(/"/g,'&quot;')}" ${current===String(o)?"selected":""}>${labelFn?labelFn(o):o}</option>`).join("");
+  return `<div style="display:flex;flex-direction:column;gap:3px;min-width:120px;flex:1">
+    <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">${label}</label>
+    <select onchange="applyActiviteFilter('${key}',this.value)" style="padding:7px 8px;font-size:13px;border:0.5px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text)">${opts}</select>
+  </div>`;
+}
+
+function applyActiviteFilter(key, value){ activiteFilters[key]=value; renderActiviteBody(); }
+function resetActiviteFilters(){ activiteFilters={annee:"",mois:"",semaine:"",commercial:"",enseigne:"",centrale:""}; renderActiviteBody(); }
+
+async function renderActivite(containerId){
+  activiteContainerId=containerId;
+  const el=document.getElementById(containerId);
+  if(!el) return;
+  el.innerHTML='<div class="empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>Chargement de l\'activité…</div>';
+  await loadActiviteData();
+  renderActiviteBody();
+}
+
+function renderActiviteBody(){
+  const el=document.getElementById(activiteContainerId);
+  if(!el || !activiteData) return;
+  const opt=activiteOptions();
+  const f=activiteFilters;
+  const filtered=activiteFiltered();
+  const byUser=activiteStats(filtered);
+
+  // KPIs globaux
+  const magasinsGlob=new Set(); let visitesGlob=0, contactGlob=0, joursGlob=0;
+  Object.keys(byUser).forEach(u=>{
+    const s=byUser[u];
+    visitesGlob+=s.visites; contactGlob+=s.avecContact;
+    s.magasins.forEach(m=>magasinsGlob.add(m));
+    joursGlob+=joursEffectifs(u,s.weeks);
+  });
+  const pctContact=visitesGlob? (contactGlob/visitesGlob*100):0;
+  const visitesJour=joursGlob? (visitesGlob/joursGlob):0;
+
+  // Filtres (le sélecteur Commercial seulement si manager + plusieurs)
+  const showComm = activiteData.isManager && opt.users.length>1;
+  const filtersHtml=`
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;align-items:flex-end">
+      ${activiteSelect("Année","annee",opt.annees,f.annee)}
+      ${activiteSelect("Mois","mois",opt.mois,f.mois,m=>MOIS_LABELS[+m]||m)}
+      ${activiteSelect("Semaine","semaine",opt.semaines,f.semaine,semaineLabel)}
+      ${showComm?activiteSelect("Commercial","commercial",opt.users,f.commercial,u=>activiteData.names[u]||"—"):""}
+      ${activiteSelect("Enseigne","enseigne",opt.enseignes,f.enseigne)}
+      ${activiteSelect("Centrale","centrale",opt.centrales,f.centrale)}
+      <button class="btn-sm" onclick="resetActiviteFilters()" style="background:var(--bg3);color:var(--text);border:0.5px solid var(--border);align-self:flex-end"><i class="ti ti-rotate"></i></button>
+    </div>`;
+
+  const kpis=`
+    <div class="metric-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px">
+      <div class="metric"><div class="metric-label">Magasins visités</div><div class="metric-value">${magasinsGlob.size}</div><div class="metric-sub">distincts</div></div>
+      <div class="metric"><div class="metric-label">Nombre de visites</div><div class="metric-value">${visitesGlob}</div><div class="metric-sub">sur la période</div></div>
+      <div class="metric"><div class="metric-label">Visites / jour</div><div class="metric-value" style="color:var(--accent)">${visitesJour.toFixed(2)}</div><div class="metric-sub">${joursGlob} jour${joursGlob>1?"s":""} terrain</div></div>
+      <div class="metric" style="display:flex;flex-direction:column;justify-content:center;align-items:center">
+        <div class="metric-label" style="align-self:flex-start">Visites avec contact</div>
+        ${gaugeSvg(pctContact)}
+        <div class="metric-sub">${contactGlob}/${visitesGlob} · client vu</div>
+      </div>
+    </div>`;
+
+  // Tableau par commercial
+  const semActive=f.semaine; // édition jours uniquement si une semaine précise est sélectionnée
+  const userIds=Object.keys(byUser).sort((a,b)=>(byUser[b].visites)-(byUser[a].visites));
+  let totVis=0,totMag=0,totJours=0,totContact=0;
+  const rows=userIds.map(u=>{
+    const s=byUser[u];
+    const jours=joursEffectifs(u,s.weeks);
+    const vj=jours? (s.visites/jours):0;
+    const pc=s.visites? (s.avecContact/s.visites*100):0;
+    totVis+=s.visites; totMag+=s.magasins.size; totJours+=jours; totContact+=s.avecContact;
+    const ov=joursTerrain[u+"|"+semActive];
+    const joursCell = semActive
+      ? `<input type="number" min="0" step="0.5" value="${ov!=null?ov:(s.weeks[semActive]?s.weeks[semActive].size:0)}" onchange="setJoursTerrain('${u}','${semActive}',this.value)" style="width:54px;padding:4px;text-align:center;border:0.5px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px"${ov!=null?' title="Ajusté manuellement"':''}>`
+      : `${jours}`;
+    return `<tr style="border-bottom:0.5px solid var(--border)">
+      <td style="padding:9px 8px;font-weight:500;white-space:nowrap">${activiteData.names[u]||"—"}</td>
+      <td style="padding:9px 8px;text-align:right">${s.visites}</td>
+      <td style="padding:9px 8px;text-align:right">${s.magasins.size}</td>
+      <td style="padding:9px 8px;text-align:center">${joursCell}</td>
+      <td style="padding:9px 8px;text-align:right;font-weight:600;color:var(--accent)">${vj.toFixed(2)}</td>
+      <td style="padding:9px 8px;text-align:right;color:${dnColor(pc)}">${Math.round(pc)}%</td>
+    </tr>`;
+  }).join("");
+  const totVj=totJours?(totVis/totJours):0;
+  const totPc=totVis?(totContact/totVis*100):0;
+
+  const tableHtml=`
+    <div class="section-label">Par commercial</div>
+    ${semActive?'':'<div style="font-size:11px;color:var(--text3);margin-bottom:8px"><i class="ti ti-info-circle"></i> Sélectionne une semaine pour ajuster les jours terrain.</div>'}
+    <div style="overflow-x:auto;border:0.5px solid var(--border);border-radius:12px">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:480px">
+      <thead><tr style="background:var(--bg3);text-align:left">
+        <th style="padding:9px 8px;font-weight:500">Commercial</th>
+        <th style="padding:9px 8px;text-align:right;font-weight:500">Visites</th>
+        <th style="padding:9px 8px;text-align:right;font-weight:500">Magasins</th>
+        <th style="padding:9px 8px;text-align:center;font-weight:500">Jours${semActive?' ✎':''}</th>
+        <th style="padding:9px 8px;text-align:right;font-weight:500">Vis./J</th>
+        <th style="padding:9px 8px;text-align:right;font-weight:500">% contact</th>
+      </tr></thead>
+      <tbody>
+        ${rows||'<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--text3)">Aucune donnée pour ces filtres.</td></tr>'}
+        ${rows?`<tr style="background:var(--bg3);font-weight:700">
+          <td style="padding:9px 8px">Total</td>
+          <td style="padding:9px 8px;text-align:right">${totVis}</td>
+          <td style="padding:9px 8px;text-align:right">${magasinsGlob.size}</td>
+          <td style="padding:9px 8px;text-align:center">${totJours}</td>
+          <td style="padding:9px 8px;text-align:right;color:var(--accent)">${totVj.toFixed(2)}</td>
+          <td style="padding:9px 8px;text-align:right;color:${dnColor(totPc)}">${Math.round(totPc)}%</td>
+        </tr>`:''}
+      </tbody>
+    </table>
+    </div>`;
+
+  el.innerHTML = filtersHtml + kpis + tableHtml;
 }
 
 // LOGOS
