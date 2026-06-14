@@ -439,6 +439,8 @@ canvas{display:block;margin:0 auto}
   <canvas id="pie-chart" width="200" height="200" style="margin-bottom:18px"></canvas>
   <div class="section-label">Détail par marque</div>
   <div class="card" id="result-list"></div>
+  <div class="section-label">Récap commercial</div>
+  <div id="result-recap"></div>
   <div style="height:90px"></div>
   <div class="sticky-bar" style="display:flex;gap:10px">
     <button class="btn" style="margin-bottom:0" onclick="exportCSV()"><i class="ti ti-table-export" aria-hidden="true"></i> CSV</button>
@@ -749,7 +751,9 @@ function desktopShowReleve(id){
     <div class="metric-grid" id="result-metrics"></div>
     <canvas id="pie-chart" width="200" height="200" style="margin-bottom:18px"></canvas>
     <div class="section-label">Détail par marque</div>
-    <div class="card" id="result-list"></div>`;
+    <div class="card" id="result-list"></div>
+    <div class="section-label">Récap commercial</div>
+    <div id="result-recap"></div>`;
   renderResults(r);
 }
 
@@ -2812,6 +2816,44 @@ function renderResults(r){
       <div class="result-ml">${l.ml.toFixed(2)}m</div>
     </div>`;
   }).join('');
+
+  // Récap commercial : PVC / VMH / CA / CA/ML par référence
+  const recapEl=document.getElementById('result-recap');
+  if(recapEl){
+    let totCA=0, totMLca=0, anyData=false;
+    const rrows=lines.map(l=>{
+      const pvc=(l.prix_constate!=null)?l.prix_constate:null;
+      const vmh=(l.vmh!=null)?l.vmh:null;
+      const ca=(vmh!=null&&pvc!=null)?(vmh*pvc):null;
+      const caml=(ca!=null&&l.ml>0)?(ca/l.ml):null;
+      if(ca!=null){ totCA+=ca; totMLca+=l.ml; anyData=true; }
+      return `<tr style="border-bottom:0.5px solid var(--border)">
+        <td style="padding:8px;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis">${l.p.marque}</td>
+        <td style="padding:8px;text-align:right">${pvc!=null?pvc.toFixed(2)+'€':'—'}</td>
+        <td style="padding:8px;text-align:right">${vmh!=null?vmh:'—'}</td>
+        <td style="padding:8px;text-align:right">${ca!=null?ca.toFixed(0)+'€':'—'}</td>
+        <td style="padding:8px;text-align:right">${caml!=null?caml.toFixed(0)+'€/m':'—'}</td>
+      </tr>`;
+    }).join('');
+    const totCaml=totMLca>0?(totCA/totMLca):null;
+    recapEl.innerHTML=`<div style="overflow-x:auto;border:0.5px solid var(--border);border-radius:12px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:420px">
+        <thead><tr style="background:var(--bg3);text-align:left">
+          <th style="padding:8px;font-weight:500">Référence</th>
+          <th style="padding:8px;text-align:right;font-weight:500">PVC</th>
+          <th style="padding:8px;text-align:right;font-weight:500">VMH</th>
+          <th style="padding:8px;text-align:right;font-weight:500">CA</th>
+          <th style="padding:8px;text-align:right;font-weight:500">CA/ML</th>
+        </tr></thead>
+        <tbody>${rrows}
+        ${anyData?`<tr style="background:var(--bg3);font-weight:700">
+          <td style="padding:8px">Total</td><td></td><td></td>
+          <td style="padding:8px;text-align:right">${totCA.toFixed(0)}€</td>
+          <td style="padding:8px;text-align:right">${totCaml!=null?totCaml.toFixed(0)+'€/m':'—'}</td>
+        </tr>`:''}</tbody>
+      </table></div>
+      ${!anyData?'<div style="font-size:12px;color:var(--text3);margin-top:6px">Renseigne PVC + VMH sur les facings pour voir le CA.</div>':''}`;
+  }
 }
 
 // EXPORT CSV
