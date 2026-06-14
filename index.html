@@ -923,7 +923,9 @@ async function init(){
     centrales=JSON.parse(localStorage.getItem('rsp_centrales')||'null')||JSON.parse(JSON.stringify(DEFAULT_CENTRALES));
     if(prodRes.data&&prodRes.data.length>0){products=prodRes.data.map(p=>({...p,longueur:p.longueur||p.largeur||0,centrales:p.centrales||[]}));}
     else{products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));await sb.from('produits').insert(products.map(p=>({id:p.id,marque:p.marque,ref:p.ref,type:p.type,longueur:p.longueur,hauteur:p.hauteur,poids:p.poids,notes:p.notes,centrales:p.centrales||[]})));}
-    releves=relRes.data||[];
+    // Vues perso (Relevés, Clients, Fiche) = uniquement les relevés de l'utilisateur connecté.
+    // Les vues équipe (Dashboard DN, Activité) rechargent l'équipe via leurs propres requêtes.
+    releves=(relRes.data||[]).filter(r=>(r.user_id||currentUser.id)===currentUser.id);
     magasins=magRes.data||[];
     setSyncStatus('ok','Synchronisé');
   // Affiche onglet équipe pour directeur et admin
@@ -936,7 +938,7 @@ async function init(){
     setSyncStatus('error','Hors ligne');
     centrales=JSON.parse(localStorage.getItem('rsp_centrales')||'null')||JSON.parse(JSON.stringify(DEFAULT_CENTRALES));
     products=JSON.parse(localStorage.getItem('rsp_products')||'null')||JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
-    releves=JSON.parse(localStorage.getItem('rsp_releves')||'[]');
+    releves=JSON.parse(localStorage.getItem('rsp_releves')||'[]').filter(r=>!currentUser||(r.user_id||currentUser.id)===currentUser.id);
     loadDNLocal();
     loadContactsLocal();
     loadJoursTerrainLocal();
