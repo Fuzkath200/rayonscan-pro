@@ -303,7 +303,7 @@ canvas{display:block;margin:0 auto}
     <button class="tab4" onclick="switchTab('centrales',this)">Centrales</button>
   </div>
   <div id="tab-releves">
-    <button class="btn" onclick="showScreen('screen-new-releve')"><i class="ti ti-plus" aria-hidden="true"></i> Nouveau relevé</button>
+    <button class="btn" onclick="newReleve()"><i class="ti ti-plus" aria-hidden="true"></i> Nouveau relevé</button>
     <div id="releve-list"></div>
   </div>
   <div id="tab-equipe" style="display:none">
@@ -791,6 +791,24 @@ function desktopFicheClient(magasin, enseigne){
   showFicheClient(magasin, enseigne);
 }
 
+function newReleve(){
+  // Remise à zéro complète du formulaire pour un nouveau relevé
+  editingReleve=false;
+  currentReleve=null;
+  facings={};
+  ['r-enseigne','r-centrale','r-magasin','r-type','r-typologie'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const dateEl=document.getElementById('r-date');
+  if(dateEl)dateEl.value=new Date().toLocaleDateString('fr-FR');
+  document.getElementById('releve-form-title').textContent='Nouveau relevé';
+  const btn=document.getElementById('releve-submit-btn');
+  if(btn)btn.innerHTML='<i class="ti ti-arrow-right" aria-hidden="true"></i> Saisir les facings';
+  updateCentraleOptions();
+  const cbox=document.getElementById('circana-box');
+  if(cbox)cbox.style.display='none';
+  if(typeof clearPhoto==='function')clearPhoto();
+  showScreen('screen-new-releve');
+}
+
 function desktopNewReleve(){
   desktopBackTarget = 'releves';
   document.getElementById('desktop-topbar-title').textContent = 'Nouveau relevé';
@@ -804,6 +822,8 @@ function desktopNewReleve(){
   const dateEl=document.getElementById('r-date');
   if(dateEl)dateEl.value = new Date().toLocaleDateString('fr-FR');
   document.getElementById('releve-form-title').textContent = 'Nouveau relevé';
+  const dbtn=document.getElementById('releve-submit-btn');
+  if(dbtn)dbtn.innerHTML='<i class="ti ti-arrow-right" aria-hidden="true"></i> Saisir les facings';
   updateCentraleOptions();
   const cbox=document.getElementById('circana-box');
   if(cbox)cbox.style.display='none';
@@ -2039,7 +2059,7 @@ function showFicheClient(magasin, enseigne){
 }
 
 function openNewReleveFromClient(){
-  showScreen('screen-new-releve');
+  newReleve();
 }
 
 // RELEVÉS
