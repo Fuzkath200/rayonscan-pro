@@ -747,7 +747,7 @@ async function renderEquipeDesktop(){
               <div style="width:40px;flex-shrink:0"></div>
               <div class="releve-info">
                 <div class="releve-name">${r.magasin}</div>
-                <div class="releve-sub">${r.date}${r.centrale?' · '+r.centrale:''} · <strong>${(r.total||0).toFixed(2)}m</strong>${pName?' · <span style="color:var(--accent)">${pName}</span>':''}</div>
+                <div class="releve-sub">${r.date}${r.centrale?' · '+r.centrale:''} · <strong>${(r.total||0).toFixed(2)}m</strong>${pName?` · <span style="color:var(--accent)">${pName}</span>`:''}</div>
               </div>
               <i class="ti ti-chevron-right" style="color:var(--text3);font-size:18px"></i>
             </div>`;
@@ -1064,7 +1064,7 @@ async function renderEquipe(){
               <div style="width:40px;flex-shrink:0"></div>
               <div class="releve-info">
                 <div class="releve-name">${r.magasin}</div>
-                <div class="releve-sub">${r.date}${r.centrale?' · '+r.centrale:''} · <strong>${(r.total||0).toFixed(2)}m</strong>${pName?' · <span style="color:var(--accent)">${pName}</span>':''}</div>
+                <div class="releve-sub">${r.date}${r.centrale?' · '+r.centrale:''} · <strong>${(r.total||0).toFixed(2)}m</strong>${pName?` · <span style="color:var(--accent)">${pName}</span>`:''}</div>
               </div>
               <i class="ti ti-chevron-right" style="color:var(--text3);font-size:18px"></i>
             </div>`;
