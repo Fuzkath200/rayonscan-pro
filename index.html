@@ -338,7 +338,7 @@ canvas{display:block;margin:0 auto}
     <div class="form-group"><label>Enseigne *</label>
       <select id="r-enseigne" onchange="updateCentraleOptions()">
         <option value="">-- Choisir --</option>
-        <option>Intermarché Super</option><option>Intermarché Hyper</option>
+        <option>Intermarché</option>
         <option>Carrefour</option><option>Carrefour Market</option>
         <option>Leclerc</option><option>Auchan</option>
         <option>Super U</option><option>Hyper U</option>
@@ -409,11 +409,16 @@ canvas{display:block;margin:0 auto}
     <h2 id="facing-title">Facings</h2>
   </div>
   <div id="photo-gallery" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
-  <div class="photo-zone" id="photo-zone" onclick="document.getElementById('photo-input').click()">
+  <div class="photo-zone" id="photo-zone">
     <i class="ti ti-camera" aria-hidden="true"></i>
     <p id="photo-zone-text">Ajouter une photo</p>
-    <p class="hint">Jusqu'à 5 photos · galerie ou appareil photo</p>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:8px">
+      <button type="button" class="btn btn-sm" onclick="document.getElementById('photo-input-cam').click()"><i class="ti ti-camera" aria-hidden="true"></i> Appareil photo</button>
+      <button type="button" class="btn btn-sm" onclick="document.getElementById('photo-input').click()"><i class="ti ti-photo" aria-hidden="true"></i> Galerie</button>
+    </div>
+    <p class="hint">Jusqu'à 5 photos</p>
   </div>
+  <input type="file" id="photo-input-cam" accept="image/*" capture="environment" style="display:none">
   <input type="file" id="photo-input" accept="image/*" multiple style="display:none">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
     <p style="font-size:13px;color:var(--text2)" id="facing-filter-label">Toutes les références</p>
@@ -501,14 +506,10 @@ const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const COLORS=['#378ADD','#1D9E75','#D85A30','#BA7517','#D4537E','#639922','#7F77DD','#E24B4A','#888780','#0F6E56','#185FA5','#854F0B'];
 
 const DEFAULT_CENTRALES=[
-  {id:'c1',enseigne:'Intermarché Super',nom:'Béziers'},
-  {id:'c2',enseigne:'Intermarché Super',nom:'Brignoles'},
-  {id:'c3',enseigne:'Intermarché Super',nom:'Montbartier'},
-  {id:'c4',enseigne:'Intermarché Super',nom:'PMS'},
-  {id:'c5',enseigne:'Intermarché Hyper',nom:'Béziers'},
-  {id:'c6',enseigne:'Intermarché Hyper',nom:'Brignoles'},
-  {id:'c7',enseigne:'Intermarché Hyper',nom:'Montbartier'},
-  {id:'c8',enseigne:'Intermarché Hyper',nom:'PMS'},
+  {id:'c1',enseigne:'Intermarché',nom:'Béziers'},
+  {id:'c2',enseigne:'Intermarché',nom:'Brignoles'},
+  {id:'c3',enseigne:'Intermarché',nom:'Montbartier'},
+  {id:'c4',enseigne:'Intermarché',nom:'PMS'},
   {id:'c9',enseigne:'Leclerc',nom:'Lecasud'},
   {id:'c10',enseigne:'Leclerc',nom:'Scadif'},
   {id:'c11',enseigne:'Leclerc',nom:'Scapnor'},
@@ -714,6 +715,7 @@ async function renderEquipeDesktop(){
     if(!teamIds.length){el.innerHTML='<div class="empty"><i class="ti ti-users"></i>Aucun commercial dans votre équipe.</div>';return;}
     const{data:teamReleves}=await sb.from('releves').select('*').in('user_id',teamIds);
     const allReleves=teamReleves||[];
+    allReleves.forEach(r=>{r.enseigne=normEnseigne(r.enseigne);});
     const totalML=allReleves.reduce((s,r)=>s+(r.total||0),0);
     if(metricsEl) metricsEl.innerHTML=`
       <div class="metric"><div class="metric-label">Relevés équipe</div><div class="metric-value">${allReleves.length}</div></div>
@@ -950,6 +952,7 @@ async function init(){
     // Les vues équipe (Dashboard DN, Activité) rechargent l'équipe via leurs propres requêtes.
     releves=(relRes.data||[]).filter(r=>(r.user_id||currentUser.id)===currentUser.id);
     magasins=magRes.data||[];
+    await migrateIntermarche();
     setSyncStatus('ok','Synchronisé');
   // Affiche onglet équipe pour directeur et admin
   if(currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin')){
@@ -962,6 +965,7 @@ async function init(){
     centrales=JSON.parse(localStorage.getItem('rsp_centrales')||'null')||JSON.parse(JSON.stringify(DEFAULT_CENTRALES));
     products=JSON.parse(localStorage.getItem('rsp_products')||'null')||JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
     releves=JSON.parse(localStorage.getItem('rsp_releves')||'[]').filter(r=>!currentUser||(r.user_id||currentUser.id)===currentUser.id);
+    await migrateIntermarche();
     loadDNLocal();
     loadContactsLocal();
     loadJoursTerrainLocal();
@@ -973,6 +977,33 @@ function saveLocal(){
   localStorage.setItem('rsp_products',JSON.stringify(products));
   localStorage.setItem('rsp_releves',JSON.stringify(releves));
   localStorage.setItem('rsp_centrales',JSON.stringify(centrales));
+}
+
+async function migrateIntermarche(){
+  let centralesChanged=false;
+  centrales.forEach(c=>{const n=normEnseigne(c.enseigne);if(n!==c.enseigne){c.enseigne=n;centralesChanged=true;}});
+  // Dédup par enseigne+nom, en remappant les réfs produits vers la centrale conservée
+  const seen={},remap={};
+  centrales=centrales.filter(c=>{
+    const key=c.enseigne+'|'+c.nom;
+    if(seen[key]){remap[c.id]=seen[key];centralesChanged=true;return false;}
+    seen[key]=c.id;return true;
+  });
+  const changedProductIds=new Set();
+  if(Object.keys(remap).length){
+    products.forEach(p=>{
+      if(p.centrales&&p.centrales.length){
+        const before=JSON.stringify(p.centrales);
+        p.centrales=[...new Set(p.centrales.map(id=>remap[id]||id))];
+        if(JSON.stringify(p.centrales)!==before)changedProductIds.add(p.id);
+      }
+    });
+  }
+  releves.forEach(r=>{r.enseigne=normEnseigne(r.enseigne);});
+  if(centralesChanged)localStorage.setItem('rsp_centrales',JSON.stringify(centrales));
+  if(changedProductIds.size&&typeof sb!=='undefined'&&sb){
+    try{for(const p of products){if(changedProductIds.has(p.id))await sb.from('produits').update({centrales:p.centrales}).eq('id',p.id);}}catch(e){}
+  }
 }
 
 function showScreen(id){
@@ -1030,6 +1061,7 @@ async function renderEquipe(){
     if(!teamIds.length){el.innerHTML='<div class="empty"><i class="ti ti-users"></i>Aucun commercial dans votre équipe.</div>';return;}
     const{data:teamReleves}=await sb.from('releves').select('*').in('user_id',teamIds);
     const allReleves=teamReleves||[];
+    allReleves.forEach(r=>{r.enseigne=normEnseigne(r.enseigne);});
     if(!allReleves.length){el.innerHTML='<div class="empty"><i class="ti ti-clipboard-list"></i>Aucun releve dans l\'equipe.</div>';return;}
     const totalML=allReleves.reduce((s,r)=>s+(r.total||0),0);
     metricsEl.innerHTML=`
@@ -1737,11 +1769,13 @@ function renderActiviteBody(){
 }
 
 // LOGOS
-const LOGOS={'Intermarché Super':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Intermarch%C3%A9_logo_.svg.png','Intermarché Hyper':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Intermarch%C3%A9_logo_.svg.png','Carrefour':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Logo_Carrefour.svg.png','Carrefour Market':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/logo_carrefour_market.png','Leclerc':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Leclerc_logo.svg.webp','Auchan':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Logo_Auchan_.svg.png','Super U':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/U_commer%C3%A7ants_logo.svg.png','Hyper U':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/U_commer%C3%A7ants_logo.svg.png'};
-const ENSEIGNE_COLORS={'Intermarché Super':'#E20025','Intermarché Hyper':'#E20025','Carrefour':'#004A97','Carrefour Market':'#004A97','Leclerc':'#003189','Auchan':'#CC0000','Super U':'#E30613','Hyper U':'#E30613'};
-const ENSEIGNE_INITIALS={'Intermarché Super':'IT','Intermarché Hyper':'IT','Carrefour':'CA','Carrefour Market':'CM','Leclerc':'EL','Auchan':'AU','Super U':'SU','Hyper U':'HU'};
+const LOGOS={'Intermarché':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Intermarch%C3%A9_logo_.svg.png','Intermarché Super':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Intermarch%C3%A9_logo_.svg.png','Intermarché Hyper':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Intermarch%C3%A9_logo_.svg.png','Carrefour':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Logo_Carrefour.svg.png','Carrefour Market':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/logo_carrefour_market.png','Leclerc':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Leclerc_logo.svg.webp','Auchan':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/Logo_Auchan_.svg.png','Super U':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/U_commer%C3%A7ants_logo.svg.png','Hyper U':'https://raw.githubusercontent.com/Fuzkath200/rayonscan-pro/main/U_commer%C3%A7ants_logo.svg.png'};
+const ENSEIGNE_COLORS={'Intermarché':'#E20025','Intermarché Super':'#E20025','Intermarché Hyper':'#E20025','Carrefour':'#004A97','Carrefour Market':'#004A97','Leclerc':'#003189','Auchan':'#CC0000','Super U':'#E30613','Hyper U':'#E30613'};
+const ENSEIGNE_INITIALS={'Intermarché':'IT','Intermarché Super':'IT','Intermarché Hyper':'IT','Carrefour':'CA','Carrefour Market':'CM','Leclerc':'EL','Auchan':'AU','Super U':'SU','Hyper U':'HU'};
 
+function normEnseigne(e){return(e==='Intermarché Super'||e==='Intermarché Hyper')?'Intermarché':e;}
 function getEnseigneAvatar(enseigne,size=48){
+  enseigne=normEnseigne(enseigne);
   const url=LOGOS[enseigne];
   const color=ENSEIGNE_COLORS[enseigne]||'#BA7517';
   const initials=ENSEIGNE_INITIALS[enseigne]||enseigne.substring(0,2).toUpperCase();
@@ -2176,7 +2210,7 @@ function selectMagasin(id){
   document.getElementById('r-magasin').value=m.groupe_enseigne+' '+m.ville;
   document.getElementById('magasin-dropdown').style.display='none';
   // Auto-remplir enseigne si possible
-  const enseigneMap={'CARREFOUR':'Carrefour','CENTRE LECLERC':'Leclerc','AUCHAN':'Auchan','INTERMARCHE':'Intermarché Super','SUPER U':'Super U','HYPER U':'Hyper U','CARREFOUR MARKET':'Carrefour Market'};
+  const enseigneMap={'CARREFOUR':'Carrefour','CENTRE LECLERC':'Leclerc','AUCHAN':'Auchan','INTERMARCHE':'Intermarché','SUPER U':'Super U','HYPER U':'Hyper U','CARREFOUR MARKET':'Carrefour Market'};
   for(const[k,v] of Object.entries(enseigneMap)){
     if(m.groupe_enseigne&&m.groupe_enseigne.toUpperCase().includes(k)){
       document.getElementById('r-enseigne').value=v;
@@ -2343,7 +2377,7 @@ function openModal(type,id){
     c.innerHTML=`<h3>Renommer le relevé</h3>
       <div class="form-group"><label>Enseigne</label>
         <select id="mod-enseigne" onchange="updateRenameOptions()">
-          ${['Intermarché Super','Intermarché Hyper','Carrefour','Carrefour Market','Leclerc','Auchan','Super U','Hyper U'].map(e=>`<option${r.enseigne===e?' selected':''}>${e}</option>`).join('')}
+          ${['Intermarché','Carrefour','Carrefour Market','Leclerc','Auchan','Super U','Hyper U'].map(e=>`<option${normEnseigne(r.enseigne)===e?' selected':''}>${e}</option>`).join('')}
         </select></div>
       <div class="form-group"><label>Centrale</label><select id="mod-centrale"><option value="">-- Toutes --</option></select></div>
       <div class="form-group"><label>Magasin</label><input type="text" id="mod-magasin" value="${r.magasin}"></div>
@@ -2353,7 +2387,7 @@ function openModal(type,id){
     c.innerHTML=`<h3>Nouvelle centrale</h3>
       <div class="form-group"><label>Enseigne *</label>
         <select id="mod-cent-enseigne">
-          ${['Intermarché Super','Intermarché Hyper','Leclerc','Super U','Hyper U','Carrefour','Carrefour Market','Auchan'].map(e=>`<option>${e}</option>`).join('')}
+          ${['Intermarché','Leclerc','Super U','Hyper U','Carrefour','Carrefour Market','Auchan'].map(e=>`<option>${e}</option>`).join('')}
         </select></div>
       <div class="form-group"><label>Nom de la centrale *</label><input type="text" id="mod-cent-nom" placeholder="ex: Scapar"></div>
       <div class="modal-actions"><button class="btn" onclick="closeModal()">Annuler</button><button class="btn btn-primary" onclick="saveModal()"><i class="ti ti-check"></i> Enregistrer</button></div>`;
@@ -2470,9 +2504,7 @@ async function saveModal(){
 
 // PHOTOS
 function initPhotoListener(){
-  const photoInput=document.getElementById('photo-input');
-  if(!photoInput)return;
-  photoInput.addEventListener('change',function(e){
+  const handler=function(e){
   const files=Array.from(e.target.files);
   if(!files.length)return;
   const remaining=5-photos.length;
@@ -2497,6 +2529,7 @@ function initPhotoListener(){
         if(loaded===toLoad.length){
           renderPhotoGallery();
           document.getElementById('photo-input').value='';
+          const cam=document.getElementById('photo-input-cam');if(cam)cam.value='';
           if(photos.length>=5)document.getElementById('photo-zone').style.display='none';
           else document.getElementById('photo-zone-text').textContent='Ajouter des photos ('+photos.length+'/5)';
         }
@@ -2505,7 +2538,11 @@ function initPhotoListener(){
     };
     reader.readAsDataURL(file);
   });
-  });
+  };
+  const gal=document.getElementById('photo-input');
+  const cam=document.getElementById('photo-input-cam');
+  if(gal)gal.addEventListener('change',handler);
+  if(cam)cam.addEventListener('change',handler);
 }
 
 function renderPhotoGallery(){
@@ -2515,7 +2552,7 @@ function renderPhotoGallery(){
 
 function removePhoto(idx){photos.splice(idx,1);renderPhotoGallery();document.getElementById('photo-zone').style.display='block';document.getElementById('photo-zone-text').textContent=photos.length>0?'Ajouter une photo ('+photos.length+'/5)':'Ajouter une photo';}
 
-function clearPhoto(){photos=[];renderPhotoGallery();document.getElementById('photo-zone').style.display='block';document.getElementById('photo-zone-text').textContent='Ajouter une photo';document.getElementById('photo-input').value='';}
+function clearPhoto(){photos=[];renderPhotoGallery();document.getElementById('photo-zone').style.display='block';document.getElementById('photo-zone-text').textContent='Ajouter une photo';document.getElementById('photo-input').value='';const cam=document.getElementById('photo-input-cam');if(cam)cam.value='';}
 
 // FACINGS
 function startFacings(){
@@ -2542,10 +2579,17 @@ function startFacings(){
     else document.getElementById('photo-zone-text').textContent=photos.length>0?'Ajouter une photo ('+photos.length+'/5)':'Ajouter une photo';
   }
   document.getElementById('facing-title').textContent=enseigne+' — '+magasin;
-  // Filtre les refs par centrale
-  const centraleObj=centrale?centrales.find(c=>c.nom===centrale&&c.enseigne===enseigne):null;
-  const filteredProducts=centraleObj?products.filter(p=>p.centrales&&p.centrales.length>0&&p.centrales.includes(centraleObj.id)):products.filter(p=>p.centrales&&p.centrales.length>0);
-  document.getElementById('facing-filter-label').textContent=centrale?'Refs disponibles : '+centrale:'Toutes les références';
+  // Filtre les refs : centrale précise > sinon enseigne. Une réf sans centrale rattachée n'apparaît jamais.
+  const ens=normEnseigne(enseigne);
+  const centraleObj=centrale?centrales.find(c=>c.nom===centrale&&normEnseigne(c.enseigne)===ens):null;
+  let filteredProducts;
+  if(centraleObj){
+    filteredProducts=products.filter(p=>p.centrales&&p.centrales.includes(centraleObj.id));
+  }else{
+    const ensCentraleIds=centrales.filter(c=>normEnseigne(c.enseigne)===ens).map(c=>c.id);
+    filteredProducts=products.filter(p=>p.centrales&&p.centrales.some(cid=>ensCentraleIds.includes(cid)));
+  }
+  document.getElementById('facing-filter-label').textContent=centrale?('Réfs disponibles : '+centrale):('Réfs '+ens);
   renderFacings(filteredProducts);
   showScreen('screen-facings');
 }
