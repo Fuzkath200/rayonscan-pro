@@ -2105,15 +2105,18 @@ function openEditReleve(id){
   const r=releves.find(x=>x.id===id);if(!r)return;
   editingReleve=true;
   currentReleve=JSON.parse(JSON.stringify(r));
+  // Normalise la typologie sur l'objet courant (stockée sous typologie_magasin en base)
+  currentReleve.typologie=(r.typologie_magasin!=null?r.typologie_magasin:r.typologie)||'';
   document.getElementById('releve-form-title').textContent='Modifier le relevé';
   document.getElementById('releve-submit-btn').innerHTML='<i class="ti ti-arrow-right"></i> Modifier les facings';
-  document.getElementById('r-enseigne').value=r.enseigne;
+  document.getElementById('r-enseigne').value=normEnseigne(r.enseigne);
   updateCentraleOptions();
-  setTimeout(()=>{document.getElementById('r-centrale').value=r.centrale||'';},50);
+  document.getElementById('r-centrale').value=r.centrale||'';
   document.getElementById('r-magasin').value=r.magasin;
   document.getElementById('r-type').value=r.type;
   document.getElementById('r-date').value=r.date;
-  setTimeout(()=>{if(document.getElementById('r-typologie'))document.getElementById('r-typologie').value=r.typologie||'';},50);
+  const typoEl=document.getElementById('r-typologie');
+  if(typoEl)typoEl.value=currentReleve.typologie;
   showScreen('screen-new-releve');
 }
 
@@ -2199,9 +2202,9 @@ function getSelectedActions(){
 }
 
 function updateCentraleOptions(){
-  const enseigne=document.getElementById('r-enseigne').value;
+  const enseigne=normEnseigne(document.getElementById('r-enseigne').value);
   const sel=document.getElementById('r-centrale');
-  const filtered=centrales.filter(c=>c.enseigne===enseigne);
+  const filtered=centrales.filter(c=>normEnseigne(c.enseigne)===enseigne);
   sel.innerHTML='<option value="">-- Toutes (pas de centrale) --</option>'+filtered.map(c=>`<option value="${c.nom}">${c.nom}</option>`).join('');
 }
 
