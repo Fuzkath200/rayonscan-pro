@@ -367,37 +367,6 @@ canvas{display:block;margin:0 auto}
         <option>HM</option><option>SM</option><option>Drive</option><option>Spécialiste</option><option>Discounter</option>
       </select>
     </div>
-    <div class="form-group">
-      <label>Client vu ?</label>
-      <div style="display:flex;gap:10px;margin-top:4px">
-        <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;color:var(--text)">
-          <input type="radio" name="client-vu" id="r-client-oui" value="true" onchange="refreshReleveContacts()" style="width:auto;accent-color:var(--accent)"> Oui
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;color:var(--text)">
-          <input type="radio" name="client-vu" id="r-client-non" value="false" onchange="refreshReleveContacts()"> Non
-        </label>
-      </div>
-    </div>
-    <div class="form-group" id="r-contacts-group" style="display:none">
-      <label>Personnes vues</label>
-      <div id="r-contacts-list" style="margin-top:4px"></div>
-    </div>
-    <div class="form-group" id="actions-group">
-      <label>Actions menées</label>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px" id="actions-picker">
-        <span class="centrale-tag" data-action="Négociation" onclick="toggleAction(this)">Négociation</span>
-        <span class="centrale-tag" data-action="Montage" onclick="toggleAction(this)">Montage</span>
-        <span class="centrale-tag" data-action="Pose PLV" onclick="toggleAction(this)">Pose PLV</span>
-        <span class="centrale-tag" data-action="Implantation" onclick="toggleAction(this)">Implantation</span>
-        <span class="centrale-tag" data-action="Corrections anomalie" onclick="toggleAction(this)">Corrections anomalie</span>
-        <span class="centrale-tag" data-action="Suivi OP" onclick="toggleAction(this)">Suivi OP</span>
-        <span class="centrale-tag" data-action="Recolte DATA" onclick="toggleAction(this)">Recolte DATA</span>
-        <span class="centrale-tag" data-action="Autres" onclick="toggleAction(this)">Autres</span>
-      </div>
-    </div>
-    <div class="form-group"><label>Commentaire</label>
-      <textarea id="r-commentaire" rows="3" placeholder="Notes libres sur la visite..." style="resize:vertical"></textarea>
-    </div>
   </div>
   <div class="sticky-bar"><button class="btn btn-primary" id="releve-submit-btn" onclick="startFacings()"><i class="ti ti-arrow-right" aria-hidden="true"></i> Saisir les facings</button></div>
 </div>
@@ -830,10 +799,8 @@ function desktopNewReleve(){
   editingReleve = false;
   currentReleve = null;
   facings = {};
-  const fields = ['r-enseigne','r-centrale','r-magasin','r-type','r-typologie','r-commentaire'];
+  const fields = ['r-enseigne','r-centrale','r-magasin','r-type','r-typologie'];
   fields.forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  document.querySelectorAll('input[name="client-vu"]').forEach(r=>r.checked=false);
-  document.querySelectorAll('#actions-picker .centrale-tag').forEach(el=>el.classList.remove('selected'));
   const dateEl=document.getElementById('r-date');
   if(dateEl)dateEl.value = new Date().toLocaleDateString('fr-FR');
   document.getElementById('releve-form-title').textContent = 'Nouveau relevé';
@@ -2147,18 +2114,6 @@ function openEditReleve(id){
   document.getElementById('r-type').value=r.type;
   document.getElementById('r-date').value=r.date;
   setTimeout(()=>{if(document.getElementById('r-typologie'))document.getElementById('r-typologie').value=r.typologie||'';},50);
-  setTimeout(()=>{
-    if(r.client_vu===true){const el=document.getElementById('r-client-oui');if(el)el.checked=true;}
-    else if(r.client_vu===false){const el=document.getElementById('r-client-non');if(el)el.checked=true;}
-    if(r.commentaire){const el=document.getElementById('r-commentaire');if(el)el.value=r.commentaire;}
-    if(r.actions_menees&&r.actions_menees.length){
-      document.querySelectorAll('#actions-picker .centrale-tag').forEach(el=>{
-        if(r.actions_menees.includes(el.dataset.action))el.classList.add('selected');
-        else el.classList.remove('selected');
-      });
-    }
-  },100);
-  setTimeout(()=>{if(typeof refreshReleveContacts==='function')refreshReleveContacts();},130);
   showScreen('screen-new-releve');
 }
 
@@ -2563,8 +2518,7 @@ function startFacings(){
   const today=new Date().toLocaleDateString('fr-FR');
   if(!editingReleve){
     const magasinId=document.getElementById('r-magasin').dataset.magasinId||null;
-    const clientVu=document.querySelector('input[name="client-vu"]:checked');const actionsM=getSelectedActions();const commentaireV=(document.getElementById('r-commentaire')||{}).value||null;currentReleve={id:'r'+Date.now(),enseigne,magasin,magasin_id:magasinId,centrale,type:document.getElementById('r-type').value,typologie:document.getElementById('r-typologie').value,date:document.getElementById('r-date').value.trim()||today,client_vu:clientVu?clientVu.value==='true':null,actions_menees:actionsM.length?actionsM:null,commentaire:commentaireV,facings:{},total:0,results:[]};
-    currentReleve.contacts_vus=(currentReleve.client_vu===true)?getSelectedContacts():null;
+    currentReleve={id:'r'+Date.now(),enseigne,magasin,magasin_id:magasinId,centrale,type:document.getElementById('r-type').value,typologie:document.getElementById('r-typologie').value,date:document.getElementById('r-date').value.trim()||today,client_vu:null,actions_menees:null,commentaire:null,contacts_vus:null,facings:{},total:0,results:[]};
     facings={};products.forEach(p=>{facings[p.id]={pid:p.id,count:0};});
     clearPhoto();
   } else {
@@ -2770,7 +2724,87 @@ function chgFacing(pid,delta){
   if(fm)fm.textContent=c>0?(c*(lon/100)).toFixed(2)+'m':'—';
 }
 
-async function calcResults(){
+function calcResults(){
+  // Vérifie qu'il y a au moins un facing avant d'ouvrir le popup
+  if(!Object.values(facings).some(f=>f&&f.count>0)){alert('Saisir au moins un facing.');return;}
+  openVisiteModal();
+}
+
+function openVisiteModal(){
+  const r=currentReleve||{};
+  const vuOui=r.client_vu===true, vuNon=r.client_vu===false;
+  const acts=r.actions_menees||[];
+  const ACTIONS=['Négociation','Montage','Pose PLV','Implantation','Corrections anomalie','Suivi OP','Recolte DATA','Autres'];
+  const com=r.commentaire?String(r.commentaire).replace(/</g,'&lt;').replace(/>/g,'&gt;'):'';
+  const c=document.getElementById('modal-content');
+  c.innerHTML=`<h3>Informations visite</h3>
+    <div class="form-group">
+      <label>Client vu ?</label>
+      <div style="display:flex;gap:10px;margin-top:4px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;color:var(--text)">
+          <input type="radio" name="mv-client-vu" id="mv-client-oui" value="true" ${vuOui?'checked':''} onchange="refreshVisiteContacts()" style="width:auto;accent-color:var(--accent)"> Oui
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:14px;cursor:pointer;color:var(--text)">
+          <input type="radio" name="mv-client-vu" id="mv-client-non" value="false" ${vuNon?'checked':''} onchange="refreshVisiteContacts()"> Non
+        </label>
+      </div>
+    </div>
+    <div class="form-group" id="mv-contacts-group" style="display:none">
+      <label>Personnes vues</label>
+      <div id="mv-contacts-list" style="margin-top:4px"></div>
+    </div>
+    <div class="form-group">
+      <label>Actions menées</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px" id="mv-actions-picker">
+        ${ACTIONS.map(a=>`<span class="centrale-tag${acts.includes(a)?' selected':''}" data-action="${a}" onclick="toggleAction(this)">${a}</span>`).join('')}
+      </div>
+    </div>
+    <div class="form-group"><label>Commentaire</label>
+      <textarea id="mv-commentaire" rows="3" placeholder="Notes libres sur la visite..." style="resize:vertical">${com}</textarea>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn" style="flex:1" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" style="flex:1" onclick="confirmVisiteAndCalc()"><i class="ti ti-calculator" aria-hidden="true"></i> Calculer</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+  refreshVisiteContacts();
+}
+
+function refreshVisiteContacts(){
+  const wrap=document.getElementById('mv-contacts-group');
+  const listEl=document.getElementById('mv-contacts-list');
+  if(!wrap||!listEl)return;
+  const vu=document.querySelector('input[name="mv-client-vu"]:checked');
+  const isVu=vu&&vu.value==='true';
+  const magasin=(currentReleve&&currentReleve.magasin)||'';
+  if(!isVu||!magasin){wrap.style.display='none';listEl.innerHTML='';return;}
+  const list=contactsDuMagasin(magasin);
+  wrap.style.display='block';
+  if(!list.length){listEl.innerHTML=`<div style="font-size:12px;color:var(--text3)">Aucun contact enregistré pour ce magasin. Ajoute-les depuis l\\'onglet Clients.</div>`;return;}
+  const pre=(currentReleve&&currentReleve.contacts_vus)?currentReleve.contacts_vus.map(x=>(x.prenom||'')+'|'+(x.nom||'')):[];
+  listEl.innerHTML=list.map(c=>{
+    const key=(c.prenom||'')+'|'+(c.nom||'');
+    const on=pre.indexOf(key)!==-1;
+    return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:14px;cursor:pointer">
+      <input type="checkbox" class="mv-contact" data-prenom="${(c.prenom||'').replace(/"/g,'&quot;')}" data-nom="${(c.nom||'').replace(/"/g,'&quot;')}" data-poste="${(posteLabel(c)||'').replace(/"/g,'&quot;')}" ${on?'checked':''} style="width:17px;height:17px;flex-shrink:0">
+      <span>${(c.prenom||'')} ${(c.nom||'')}${c.poste?` <span style="color:var(--text3);font-size:12px">· ${posteLabel(c)}</span>`:''}</span>
+    </label>`;
+  }).join('');
+}
+
+function confirmVisiteAndCalc(){
+  const vu=document.querySelector('input[name="mv-client-vu"]:checked');
+  currentReleve.client_vu=vu?vu.value==='true':null;
+  const acts=[...document.querySelectorAll('#mv-actions-picker .centrale-tag.selected')].map(el=>el.dataset.action);
+  currentReleve.actions_menees=acts.length?acts:null;
+  const com=(document.getElementById('mv-commentaire')||{}).value;
+  currentReleve.commentaire=(com&&com.trim())?com.trim():null;
+  currentReleve.contacts_vus=(currentReleve.client_vu===true)?Array.from(document.querySelectorAll('.mv-contact')).filter(cb=>cb.checked).map(cb=>({prenom:cb.dataset.prenom,nom:cb.dataset.nom,poste:cb.dataset.poste||null})):null;
+  closeModal();
+  doCalcResults();
+}
+
+async function doCalcResults(){
   // Collecte les donnees extra par facing
   products.forEach(p=>{
     if(!facings[p.id])return;
