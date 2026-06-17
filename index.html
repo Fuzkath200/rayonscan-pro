@@ -19,6 +19,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .topbar h1{font-size:18px;font-weight:500;flex:1}
 .topbar h2{font-size:17px;font-weight:500;flex:1}
 .back-btn{background:none;border:none;cursor:pointer;color:var(--text2);font-size:22px;padding:2px 8px 2px 0;display:flex;align-items:center}
+.row{display:flex}
 .logo-badge{width:32px;height:32px;border-radius:8px;background:#1a1a18;display:flex;align-items:center;justify-content:center;color:white;font-size:16px}
 .tabs{display:flex;border:0.5px solid var(--border);border-radius:var(--radius);overflow-x:auto;overflow-y:hidden;margin-bottom:18px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .tabs::-webkit-scrollbar{display:none}
@@ -241,6 +242,9 @@ canvas{display:block;margin:0 auto}
     <button class="sidebar-nav-item" id="snav-clients" onclick="desktopTab('clients')">
       <i class="ti ti-users"></i> Clients
     </button>
+    <button class="sidebar-nav-item" id="snav-agenda" onclick="desktopTab('agenda')">
+      <i class="ti ti-calendar"></i> Agenda
+    </button>
     <button class="sidebar-nav-item" id="snav-activite" onclick="desktopTab('activite')">
       <i class="ti ti-activity"></i> Activité équipe
     </button>
@@ -297,6 +301,7 @@ canvas{display:block;margin:0 auto}
     <button class="tab4" onclick="switchTab('dashboard',this)">DN</button>
     <button class="tab4" onclick="switchTab('activite',this)">Activité</button>
     <button class="tab4" onclick="switchTab('clients',this)">Clients</button>
+    <button class="tab4" onclick="switchTab('agenda',this)">Agenda</button>
     <button class="tab4" id="tab-btn-equipe" style="display:none" onclick="switchTab('equipe',this)">Équipe</button>
     <button class="tab4" onclick="switchTab('enseignes',this)">Enseignes</button>
     <button class="tab4" onclick="switchTab('catalogue',this)">Catalogue</button>
@@ -316,6 +321,7 @@ canvas{display:block;margin:0 auto}
   </div>
   <div id="tab-activite" style="display:none"><div id="activite-content"></div></div>
   <div id="tab-clients" style="display:none"><div id="clients-content"></div></div>
+  <div id="tab-agenda" style="display:none"><div id="agenda-content"></div></div>
   <div id="tab-enseignes" style="display:none"><div id="enseignes-list"></div></div>
   <div id="tab-catalogue" style="display:none">
     <div class="filter-bar" id="catalogue-filter"></div>
@@ -555,7 +561,7 @@ function desktopTab(tab){
   const activeBtn = document.getElementById('snav-'+tab);
   if(activeBtn) activeBtn.classList.add('active');
   // Titre
-  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe'};
+  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda'};
   document.getElementById('desktop-topbar-title').textContent = titles[tab]||tab;
   document.getElementById('desktop-back-btn').style.display = 'none';
   // Rendu du contenu
@@ -574,6 +580,11 @@ function desktopTab(tab){
   if(tab==='activite'){
     content.innerHTML = '<div id="activite-content-desktop"></div>';
     renderActivite('activite-content-desktop');
+    return;
+  }
+  if(tab==='agenda'){
+    content.innerHTML = '<div id="agenda-content-desktop"></div>';
+    renderAgenda('agenda-content-desktop');
     return;
   }
   // Récupère le contenu de l'onglet mobile et le clone dans desktop-content
@@ -1022,7 +1033,7 @@ function showScreen(id){
 function switchTab(tab,btn){
   document.querySelectorAll('.tab4').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients','activite'].forEach(t=>{
+  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients','activite','agenda'].forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el)el.style.display=t===tab?'block':'none';
   });
@@ -1033,9 +1044,209 @@ function switchTab(tab,btn){
   if(tab==='dashboard')renderDashboard('dashboard-content');
   if(tab==='clients')renderClients('clients-content','');
   if(tab==='activite')renderActivite('activite-content');
+  if(tab==='agenda')renderAgenda('agenda-content');
 }
 
-function renderHome(){renderReleves();renderCatalogue();renderEnseignes();renderCentrales();}
+// ===== AGENDA =====
+let agenda=[];
+let agendaSelectedDate=null;
+let agendaContainerId='agenda-content';
+const AGENDA_SEUIL=45;
+const AGENDA_TYPES={
+  'Rendez-vous':{strip:'var(--info-text)',bg:'var(--info-bg)',txt:'var(--info-text)'},
+  'Opération':{strip:'var(--danger-text)',bg:'var(--danger-bg)',txt:'var(--danger-text)'},
+  'Implantation':{strip:'var(--success-text)',bg:'var(--success-bg)',txt:'var(--success-text)'},
+  'Présentation':{strip:'var(--warn-text)',bg:'var(--warn-bg)',txt:'var(--warn-text)'},
+  'Récolte de data':{strip:'#6B5FD4',bg:'#EEEDFE',txt:'#4A40A8'},
+  'Visite':{strip:'var(--text3)',bg:'var(--bg3)',txt:'var(--text2)'},
+  'Autre':{strip:'#C2557A',bg:'#FBEAF0',txt:'#993556'}
+};
+const AGENDA_DUREES=[{v:20,l:'20 min'},{v:40,l:'40 min'},{v:50,l:'50 min'},{v:60,l:'1h'},{v:90,l:'1h30'},{v:120,l:'2h'},{v:180,l:'3h'}];
+
+function loadAgenda(){
+  try{agenda=JSON.parse(localStorage.getItem('rsp_agenda')||'[]');}catch(e){agenda=[];}
+  if(!Array.isArray(agenda))agenda=[];
+  if(currentUser)agenda=agenda.filter(a=>!a.user_id||a.user_id===currentUser.id);
+}
+function saveAgenda(){localStorage.setItem('rsp_agenda',JSON.stringify(agenda));}
+
+function dmyToDate(s){const p=String(s||'').split('/');if(p.length!==3)return null;const d=new Date(+p[2],+p[1]-1,+p[0]);return isNaN(d.getTime())?null:d;}
+function dateToDmy(d){return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
+function agendaToday(){return dateToDmy(new Date());}
+function agendaAddDays(dmy,n){const d=dmyToDate(dmy)||new Date();d.setDate(d.getDate()+n);return dateToDmy(d);}
+function agendaLabel(dmy){const d=dmyToDate(dmy);if(!d)return dmy;const s=d.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});return s.charAt(0).toUpperCase()+s.slice(1);}
+function agendaEndTime(heure,duree){const p=String(heure||'').split(':');if(p.length<2)return'';let m=(+p[0])*60+(+p[1])+(+duree||0);m=((m%1440)+1440)%1440;return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');}
+function dureeLabel(v){const f=AGENDA_DUREES.find(x=>x.v===+v);return f?f.l:(v+' min');}
+
+function joursDepuisVisite(magasin){
+  const ds=releves.filter(r=>r.magasin===magasin).map(r=>dmyToDate(r.date)).filter(Boolean);
+  if(!ds.length)return null;
+  const last=new Date(Math.max(...ds.map(d=>d.getTime())));
+  return Math.floor((new Date().setHours(0,0,0,0)-last.setHours(0,0,0,0))/86400000);
+}
+function clientsARevoir(){
+  const mags=[...new Set(releves.map(r=>r.magasin).filter(Boolean))];
+  return mags.map(m=>({magasin:m,jours:joursDepuisVisite(m)})).filter(x=>x.jours!=null&&x.jours>AGENDA_SEUIL).sort((a,b)=>b.jours-a.jours);
+}
+function enseigneFromMagasinStr(str){
+  const m=magasins.find(x=>(x.groupe_enseigne+' '+x.ville)===str)||magasins.find(x=>x.groupe_enseigne===str);
+  if(!m)return'';
+  const map={'CARREFOUR':'Carrefour','CENTRE LECLERC':'Leclerc','AUCHAN':'Auchan','INTERMARCHE':'Intermarché','SUPER U':'Super U','HYPER U':'Hyper U','CARREFOUR MARKET':'Carrefour Market'};
+  for(const[k,v] of Object.entries(map)){if(m.groupe_enseigne&&m.groupe_enseigne.toUpperCase().includes(k))return v;}
+  return'';
+}
+
+function renderAgenda(containerId){
+  agendaContainerId=containerId||'agenda-content';
+  const el=document.getElementById(agendaContainerId);
+  if(!el)return;
+  if(!agendaSelectedDate)agendaSelectedDate=agendaToday();
+  loadAgenda();
+  const aRevoir=clientsARevoir();
+  const evs=agenda.filter(a=>a.date===agendaSelectedDate).sort((a,b)=>String(a.heure).localeCompare(String(b.heure)));
+  const bannerHtml=aRevoir.length?`<div onclick="agendaShowRevoir()" style="margin:0 0 12px;background:var(--warn-bg);border-radius:var(--radius);padding:9px 12px;display:flex;align-items:center;gap:8px;cursor:pointer">
+      <i class="ti ti-clock-exclamation" style="font-size:17px;color:var(--warn-text)" aria-hidden="true"></i>
+      <span style="color:var(--warn-text);font-size:12px">${aRevoir.length} client${aRevoir.length>1?'s':''} pas vu${aRevoir.length>1?'s':''} depuis +${AGENDA_SEUIL} jours</span>
+      <i class="ti ti-chevron-right" style="font-size:15px;color:var(--warn-text);margin-left:auto" aria-hidden="true"></i>
+    </div>`:'';
+  const evHtml=evs.length?evs.map(a=>{
+    const meta=AGENDA_TYPES[a.type]||AGENDA_TYPES['Autre'];
+    const j=joursDepuisVisite(a.magasin);
+    const overdue=(j!=null&&j>AGENDA_SEUIL);
+    return`<div class="row" style="gap:10px;margin-bottom:8px" onclick="tapAgendaEvent('${a.id}')">
+      <span style="font-size:12px;color:var(--text3);width:42px;padding-top:11px;flex-shrink:0">${a.heure||''}</span>
+      <div style="flex:1;display:flex;overflow:hidden;border:0.5px solid var(--border);border-radius:var(--radius-lg);cursor:pointer">
+        <div style="width:4px;background:${meta.strip};flex-shrink:0"></div>
+        <div style="padding:9px 11px;flex:1">
+          <div style="display:flex;justify-content:space-between;gap:8px">
+            <span style="font-size:14px;font-weight:500">${a.magasin||'—'}</span>
+            <span style="flex-shrink:0;font-size:10px;background:${meta.bg};color:${meta.txt};padding:2px 7px;border-radius:9px">${a.type||''}</span>
+          </div>
+          ${overdue?`<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--danger-text);margin-top:4px"><i class="ti ti-alert-triangle" style="font-size:13px" aria-hidden="true"></i> Pas vu depuis ${j} jours</div>`:''}
+          <div style="font-size:11px;color:var(--text3);margin-top:3px">${a.heure||''}${a.heure?' – '+agendaEndTime(a.heure,a.duree):''} · ${dureeLabel(a.duree)}</div>
+          ${a.note?`<div style="font-size:11px;color:var(--text2);margin-top:3px;font-style:italic">${a.note}</div>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join(''):'<div class="empty" style="padding:2rem 1rem"><i class="ti ti-calendar-off"></i>Aucun rendez-vous ce jour.</div>';
+
+  el.innerHTML=`
+    <div class="row" style="align-items:center;justify-content:space-between;margin-bottom:12px">
+      <button class="back-btn" style="font-size:18px" onclick="agendaPrev()"><i class="ti ti-chevron-left"></i></button>
+      <span style="font-size:15px;font-weight:500">${agendaLabel(agendaSelectedDate)}</span>
+      <button class="back-btn" style="font-size:18px" onclick="agendaNext()"><i class="ti ti-chevron-right"></i></button>
+    </div>
+    <div style="text-align:center;margin-bottom:12px"><button class="btn" style="display:inline-flex;width:auto;padding:5px 12px;font-size:12px;margin:0" onclick="agendaToday2()">Aujourd'hui</button></div>
+    ${bannerHtml}
+    ${evHtml}
+    <button class="btn btn-primary" style="margin-top:8px" onclick="openAgendaModal()"><i class="ti ti-plus" aria-hidden="true"></i> Nouveau rendez-vous</button>`;
+}
+function agendaPrev(){agendaSelectedDate=agendaAddDays(agendaSelectedDate,-1);renderAgenda(agendaContainerId);}
+function agendaNext(){agendaSelectedDate=agendaAddDays(agendaSelectedDate,1);renderAgenda(agendaContainerId);}
+function agendaToday2(){agendaSelectedDate=agendaToday();renderAgenda(agendaContainerId);}
+
+function agendaShowRevoir(){
+  const list=clientsARevoir();
+  const c=document.getElementById('modal-content');
+  c.innerHTML=`<h3>Clients à revoir (+${AGENDA_SEUIL} j)</h3>
+    <div style="max-height:50vh;overflow-y:auto;margin-top:8px">
+    ${list.map(x=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:0.5px solid var(--border)">
+        <span style="font-size:14px">${x.magasin}</span>
+        <span style="font-size:12px;color:var(--danger-text);font-weight:500;flex-shrink:0;margin-left:8px">${x.jours} j</span>
+      </div>`).join('')}
+    </div>
+    <button class="btn" style="margin-top:12px" onclick="closeModal()">Fermer</button>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function openAgendaModal(id){
+  const a=id?agenda.find(x=>x.id===id):null;
+  const datalist=magasins.map(m=>`<option value="${(m.groupe_enseigne+' '+m.ville).replace(/"/g,'&quot;')}">`).join('');
+  const c=document.getElementById('modal-content');
+  c.innerHTML=`<h3>${a?'Modifier le rendez-vous':'Nouveau rendez-vous'}</h3>
+    <div class="form-group"><label>Magasin / client</label>
+      <input id="ag-magasin" list="ag-mag-list" value="${a?String(a.magasin||'').replace(/"/g,'&quot;'):''}" placeholder="Rechercher un magasin…" autocomplete="off">
+      <datalist id="ag-mag-list">${datalist}</datalist>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Date</label><input id="ag-date" value="${a?a.date:agendaSelectedDate}" placeholder="jj/mm/aaaa"></div>
+      <div class="form-group"><label>Heure</label><input type="time" id="ag-heure" value="${a?a.heure:'09:00'}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Durée</label>
+        <select id="ag-duree">${AGENDA_DUREES.map(d=>`<option value="${d.v}"${a&&+a.duree===d.v?' selected':(!a&&d.v===60?' selected':'')}>${d.l}</option>`).join('')}</select>
+      </div>
+      <div class="form-group"><label>Type</label>
+        <select id="ag-type">${Object.keys(AGENDA_TYPES).map(t=>`<option${a&&a.type===t?' selected':''}>${t}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="form-group"><label>Note (optionnel)</label><input id="ag-note" value="${a?String(a.note||'').replace(/"/g,'&quot;'):''}" placeholder="Objet du RDV…"></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      ${a?`<button class="btn btn-danger" style="flex:0 0 auto" onclick="deleteAgendaEvent('${a.id}')"><i class="ti ti-trash"></i></button>`:''}
+      <button class="btn" style="flex:1" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" style="flex:1" onclick="saveAgendaEvent('${a?a.id:''}')">Enregistrer</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function saveAgendaEvent(id){
+  const magasin=(document.getElementById('ag-magasin').value||'').trim();
+  if(!magasin){alert('Indique un magasin.');return;}
+  const date=(document.getElementById('ag-date').value||'').trim()||agendaSelectedDate;
+  const heure=document.getElementById('ag-heure').value||'';
+  const duree=parseInt(document.getElementById('ag-duree').value)||60;
+  const type=document.getElementById('ag-type').value;
+  const note=(document.getElementById('ag-note').value||'').trim();
+  const enseigne=enseigneFromMagasinStr(magasin);
+  if(id){
+    const i=agenda.findIndex(x=>x.id===id);
+    if(i>-1)agenda[i]={...agenda[i],magasin,date,heure,duree,type,note,enseigne};
+  }else{
+    agenda.push({id:'a'+Date.now(),user_id:currentUser?currentUser.id:null,magasin,date,heure,duree,type,note,enseigne});
+  }
+  saveAgenda();
+  agendaSelectedDate=date;
+  closeModal();
+  renderAgenda(agendaContainerId);
+}
+
+function deleteAgendaEvent(id){
+  if(!confirm('Supprimer ce rendez-vous ?'))return;
+  agenda=agenda.filter(x=>x.id!==id);
+  saveAgenda();
+  closeModal();
+  renderAgenda(agendaContainerId);
+}
+
+function tapAgendaEvent(id){
+  const a=agenda.find(x=>x.id===id);if(!a)return;
+  const meta=AGENDA_TYPES[a.type]||AGENDA_TYPES['Autre'];
+  const c=document.getElementById('modal-content');
+  c.innerHTML=`<h3>${a.magasin}</h3>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px">
+      <span style="font-size:11px;background:${meta.bg};color:${meta.txt};padding:2px 8px;border-radius:9px">${a.type}</span>
+      · ${a.heure||''}${a.heure?' – '+agendaEndTime(a.heure,a.duree):''} · ${dureeLabel(a.duree)}
+      ${a.note?`<div style="margin-top:6px;font-style:italic">${a.note}</div>`:''}
+    </div>
+    <button class="btn btn-primary" style="margin-bottom:8px" onclick="releveFromAgenda('${String(a.magasin).replace(/'/g,"\\'")}','${String(a.enseigne||'').replace(/'/g,"\\'")}')"><i class="ti ti-plus" aria-hidden="true"></i> Créer un relevé</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn" style="flex:1" onclick="openAgendaModal('${a.id}')"><i class="ti ti-edit"></i> Modifier</button>
+      <button class="btn btn-danger" style="flex:1" onclick="deleteAgendaEvent('${a.id}')"><i class="ti ti-trash"></i> Supprimer</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function releveFromAgenda(magasin,enseigne){
+  closeModal();
+  newReleve();
+  setTimeout(()=>{
+    const me=document.getElementById('r-magasin');if(me)me.value=magasin;
+    if(enseigne){const ee=document.getElementById('r-enseigne');if(ee){ee.value=enseigne;updateCentraleOptions();}}
+  },40);
+}
+
+
+function renderHome(){renderReleves();renderCatalogue();renderEnseignes();renderCentrales();loadAgenda();}
 
 async function renderEquipe(){
   const el=document.getElementById('equipe-list');
@@ -2131,7 +2342,15 @@ function openEditReleve(id){
   document.getElementById('releve-submit-btn').innerHTML='<i class="ti ti-arrow-right"></i> Modifier les facings';
   document.getElementById('r-enseigne').value=normEnseigne(r.enseigne);
   updateCentraleOptions();
-  document.getElementById('r-centrale').value=r.centrale||'';
+  const centraleSel=document.getElementById('r-centrale');
+  centraleSel.value=r.centrale||'';
+  // Si une centrale est enregistrée mais absente de la liste filtrée, on l'ajoute pour ne pas la perdre
+  if((r.centrale||'') && centraleSel.value!==r.centrale){
+    const opt=document.createElement('option');
+    opt.value=r.centrale;opt.textContent=r.centrale;
+    centraleSel.appendChild(opt);
+    centraleSel.value=r.centrale;
+  }
   document.getElementById('r-magasin').value=r.magasin;
   document.getElementById('r-type').value=r.type;
   document.getElementById('r-date').value=r.date;
@@ -2620,6 +2839,10 @@ function renderFacings(prods){
           <option value="non"${fd.rupture==='non'||!fd.rupture?' selected':''}>Rupture: Non</option>
           <option value="oui"${fd.rupture==='oui'?' selected':''}>Rupture: Oui</option>
         </select>
+        <select id="fsa-${p.id}" style="font-size:11px;padding:4px 6px;border:0.5px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--text)">
+          <option value="Centrale"${!fd.source_appro||fd.source_appro==='Centrale'?' selected':''}>Appro: Centrale</option>
+          <option value="Grossiste"${fd.source_appro==='Grossiste'?' selected':''}>Appro: Grossiste</option>
+        </select>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;padding:2px 0 6px 19px;width:100%;border-top:0.5px solid var(--border);margin-top:4px">
         <div style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;width:100%;margin-bottom:2px">Infos commerciales</div>
@@ -2759,6 +2982,7 @@ function openVisiteModal(){
   const acts=r.actions_menees||[];
   const ACTIONS=['Négociation','Montage','Pose PLV','Implantation','Corrections anomalie','Suivi OP','Recolte DATA','Autres'];
   const com=r.commentaire?String(r.commentaire).replace(/</g,'&lt;').replace(/>/g,'&gt;'):'';
+  const plan=r.notes?String(r.notes).replace(/</g,'&lt;').replace(/>/g,'&gt;'):'';
   const c=document.getElementById('modal-content');
   c.innerHTML=`<h3>Informations visite</h3>
     <div class="form-group">
@@ -2784,6 +3008,9 @@ function openVisiteModal(){
     </div>
     <div class="form-group"><label>Commentaire</label>
       <textarea id="mv-commentaire" rows="3" placeholder="Notes libres sur la visite..." style="resize:vertical">${com}</textarea>
+    </div>
+    <div class="form-group"><label>Plan d'action à venir</label>
+      <textarea id="mv-plan-action" rows="2" placeholder="Prochaines étapes, relances..." style="resize:vertical">${plan}</textarea>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn" style="flex:1" onclick="closeModal()">Annuler</button>
@@ -2822,6 +3049,8 @@ function confirmVisiteAndCalc(){
   currentReleve.actions_menees=acts.length?acts:null;
   const com=(document.getElementById('mv-commentaire')||{}).value;
   currentReleve.commentaire=(com&&com.trim())?com.trim():null;
+  const plan=(document.getElementById('mv-plan-action')||{}).value;
+  currentReleve.notes=(plan&&plan.trim())?plan.trim():null;
   currentReleve.contacts_vus=(currentReleve.client_vu===true)?Array.from(document.querySelectorAll('.mv-contact')).filter(cb=>cb.checked).map(cb=>({prenom:cb.dataset.prenom,nom:cb.dataset.nom,poste:cb.dataset.poste||null})):null;
   closeModal();
   doCalcResults();
@@ -2840,6 +3069,7 @@ async function doCalcResults(){
     const mgEl=document.getElementById('fmg-'+p.id);
     const tvEl=document.getElementById('ftv-'+p.id);
     const vmEl=document.getElementById('fvm-'+p.id);
+    const saEl=document.getElementById('fsa-'+p.id);
     if(pEl)facings[p.id].prix_constate=parseFloat(pEl.value)||null;
     if(qEl)facings[p.id].qualite=qEl.value;
     if(prEl)facings[p.id].promo=prEl.value;
@@ -2849,6 +3079,7 @@ async function doCalcResults(){
     if(mgEl)facings[p.id].marge=parseFloat(mgEl.value)||null;
     if(tvEl)facings[p.id].tva=parseFloat(tvEl.value)||null;
     if(vmEl)facings[p.id].vmh=parseFloat(vmEl.value)||null;
+    if(saEl)facings[p.id].source_appro=saEl.value;
   });
   const lines=Object.values(facings).filter(f=>f.count>0).map(f=>{
     const p=products.find(x=>x.id===f.pid);const lon=p?(p.longueur||p.largeur||0):0;
@@ -2859,7 +3090,7 @@ async function doCalcResults(){
   if(!lines.length){alert('Saisir au moins un facing.');return;}
   const total=lines.reduce((s,l)=>s+l.ml,0);
   currentReleve.facings=JSON.parse(JSON.stringify(facings));
-  currentReleve.results=lines.map(l=>({pid:l.pid,count:l.count,ml:l.ml,prix_constate:l.prix_constate||null,prix_kg:l.prix_kg||null,qualite:l.qualite||null,promo:l.promo||null,rupture:l.rupture||null,date_cond:l.date_cond||null,pa_ht:l.pa_ht||null,marge:l.marge||null,tva:l.tva||null,vmh:l.vmh||null}));
+  currentReleve.results=lines.map(l=>({pid:l.pid,count:l.count,ml:l.ml,prix_constate:l.prix_constate||null,prix_kg:l.prix_kg||null,qualite:l.qualite||null,promo:l.promo||null,rupture:l.rupture||null,date_cond:l.date_cond||null,pa_ht:l.pa_ht||null,marge:l.marge||null,tva:l.tva||null,vmh:l.vmh||null,source_appro:l.source_appro||null}));
   currentReleve.total=total;
   // Photos stockées localement uniquement
   if(photos.length>0){
@@ -3021,11 +3252,66 @@ function renderResults(r){
 // EXPORT CSV
 function exportCSV(){
   if(!currentReleve)return;
-  const lines=(currentReleve.results||[]).map(l=>({...l,p:products.find(x=>x.id===l.pid)||{marque:'?',ref:'?'}}));
-  const total=currentReleve.total||0;
-  const rows=[['RayonScan Pro — Relevé linéaire'],[`Enseigne:;${currentReleve.enseigne} ${currentReleve.magasin}`],[`Centrale:;${currentReleve.centrale||'—'}`],[`Date:;${currentReleve.date}`],[`Type:;${currentReleve.type}`],[`Linéaire total:;${total.toFixed(2)}m`],[],['Marque','Référence','Facings','ML (m)','Part (%)'],...lines.map(l=>[l.p.marque,l.p.ref,l.count,l.ml.toFixed(2),(total>0?(l.ml/total*100):0).toFixed(1)+'%']),[], ['TOTAL','',lines.reduce((s,l)=>s+l.count,0),total.toFixed(2),'100%']];
-  const csv='\uFEFF'+rows.map(r=>Array.isArray(r)?r.join(';'):r).join('\n');
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download=`releve_${currentReleve.enseigne}_${currentReleve.magasin}_${currentReleve.date.replace(/\//g,'-')}.csv`.replace(/\s/g,'_');a.click();
+  const r=currentReleve;
+  const results=r.results||[];
+  if(!results.length){alert('Aucune référence à exporter.');return;}
+
+  // Helpers
+  const dec=(v,d)=>{d=(d==null?2:d);return (v==null||v===''||isNaN(v))?'':Number(v).toFixed(d).replace('.',',');};
+  const cell=v=>{v=(v==null)?'':String(v);return /[;"\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const MOIS=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  const dParts=String(r.date||'').split('/');
+  const moisTxt=(dParts.length===3 && +dParts[1]>=1 && +dParts[1]<=12)?MOIS[+dParts[1]-1]:'';
+  const wkKey=isoWeekKey(r.date);
+  const semaine=wkKey?wkKey.split('-S')[1]:'';
+  const qualMap={green:'Bonne',orange:'Moyenne',red:'Mauvaise'};
+  const ouiNon=v=>v==='oui'?'Oui':(v==='non'?'Non':'');
+
+  // Niveau relevé
+  const chef=currentProfile?((currentProfile.prenom||'')+' '+(currentProfile.nom||'')).trim():'';
+  const ens=normEnseigne(r.enseigne);
+  const mag=magasins.find(m=>m.id===r.magasin_id)||magasins.find(m=>(m.groupe_enseigne+' '+m.ville)===r.magasin)||magasins.find(m=>m.groupe_enseigne===r.magasin);
+  const ville=mag?(mag.ville||''):'';
+  let contact='';
+  if(r.client_vu===true)contact=(r.contacts_vus&&r.contacts_vus.length)?r.contacts_vus.map(c=>((c.prenom||'')+' '+(c.nom||'')).trim()).join(', '):'Client vu';
+  else if(r.client_vu===false)contact='Non vu';
+  const actions=(r.actions_menees&&r.actions_menees.length)?r.actions_menees.join(', '):'';
+  const compteRendu=r.commentaire||'';
+  const planAction=r.notes||'';
+
+  // Métriques Azura (niveau relevé)
+  const prod=pid=>products.find(x=>x.id===pid)||{};
+  const dnM=(typeof dnMarques!=='undefined'&&dnMarques&&dnMarques.length)?dnMarques.map(x=>String(x).toLowerCase().trim()):null;
+  const isAzura=marque=>{const m=String(marque||'').toLowerCase();return dnM?dnM.includes(m):m.indexOf('azura')!==-1;};
+  const azuraLines=results.filter(l=>isAzura(prod(l.pid).marque));
+  const pdlAzura=azuraLines.reduce((s,l)=>s+(l.ml||0),0);
+  const partOffre=results.length?(azuraLines.length/results.length*100):0;
+  const dnAzura=azuraLines.length>0?100:0;
+
+  const headers=['Nom Chef de Secteur','Date du relevé','MOIS','N° Semaine','Enseigne','Ville','Nom magasin','Centrale Régionale','HM/SM','Nomenclature segment','MN ou MDD','Marque','Type produit (fixe/variable)','Format (g)','Origine','Prix uvc','Prix/kg','Date conditionnement','Exposition (nbre descente facing)','Qualité Exposition','Promo en cours','Ruptures constatées','Source approvisionnement','DN Azura (%)','PDL Azura (m)','Part d\'offre Azura (%)','Drive','PAHT','VMH','CA HEBDO','CA / m linéaire','FRONT MARGIN (%)','MASSE DE MARGE HEBDO','Contact client','Actions menées','Compte rendu visite (4P)','Plan d\'action à venir'];
+
+  const lines=results.map(l=>{
+    const p=prod(l.pid);
+    const prix=l.prix_constate;
+    const ca=(l.vmh&&prix)?l.vmh*prix:null;
+    const caml=(ca!=null&&l.ml>0)?ca/l.ml:null;
+    const front=(prix&&l.pa_ht)?(prix-l.pa_ht)/prix*100:null;
+    const masse=(prix&&l.pa_ht&&l.vmh)?(prix-l.pa_ht)*l.vmh:null;
+    return [
+      chef, r.date||'', moisTxt, semaine, ens, ville, r.magasin||'', r.centrale||'', r.typologie||'',
+      p.segment||'', p.type_marque||'', p.marque||'', p.poids_type||'', p.poids||'', p.origine||'',
+      dec(prix), dec(l.prix_kg), l.date_cond||'', l.count, qualMap[l.qualite]||'', ouiNon(l.promo), ouiNon(l.rupture), l.source_appro||'',
+      dec(dnAzura,0), dec(pdlAzura), dec(partOffre,1), p.drive||'',
+      dec(l.pa_ht), (l.vmh!=null?l.vmh:''), dec(ca,0), dec(caml), dec(front,1), dec(masse,0),
+      contact, actions, compteRendu, planAction
+    ].map(cell).join(';');
+  });
+
+  const csv='\uFEFF'+[headers.map(cell).join(';'), ...lines].join('\r\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download=`releve_${ens}_${r.magasin}_${String(r.date||'').replace(/\//g,'-')}.csv`.replace(/\s/g,'_');
+  a.click();
 }
 
 // EXPORT PDF
