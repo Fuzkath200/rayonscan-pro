@@ -1492,7 +1492,10 @@ function openAssortimentModal(id){
       </label>`).join('');
   }).join('');
   const c=document.getElementById('modal-content');
-  c.innerHTML=`<h3>${a?"Modifier l'assortiment":"Nouvel assortiment"}</h3>
+  c.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <button class="back-btn" style="font-size:20px;padding:0" onclick="openAssortimentsList()" aria-label="Retour"><i class="ti ti-arrow-left"></i></button>
+      <h3 style="margin:0">${a?"Modifier l'assortiment":"Nouvel assortiment"}</h3>
+    </div>
     <div class="form-group"><label>Nom</label><input id="aso-nom" value="${a?String(a.nom||'').replace(/"/g,'&quot;'):''}" placeholder="Ex. Été 2026"></div>
     <div class="form-row">
       <div class="form-group"><label>Centrale / enseigne</label>
@@ -1506,14 +1509,14 @@ function openAssortimentModal(id){
       <div class="form-group"><label>Début (jj/mm/aaaa)</label><input id="aso-debut" value="${a?(a.date_debut||''):''}" placeholder="optionnel"></div>
       <div class="form-group"><label>Fin (jj/mm/aaaa)</label><input id="aso-fin" value="${a?(a.date_fin||''):''}" placeholder="optionnel"></div>
     </div>
-    ${(a&&(!a.refs||!a.refs.length)&&a.theorique_count)?`<div style="font-size:11px;color:var(--warn-text);background:var(--warn-bg);padding:7px 10px;border-radius:8px;margin-bottom:8px">Ancien théorique : ${a.theorique_count} réfs (nombre). Coche ci-dessous les références précises pour activer la DM détaillée.</div>`:''}
+    ${(a&&(!a.refs||!a.refs.length)&&a.theorique_count)?`<div style="font-size:11px;color:var(--warn-text);background:var(--warn-bg);padding:7px 10px;border-radius:8px;margin-bottom:8px">Ancien théorique : ${a.theorique_count} réfs (nombre). Coche ci-dessous les références précises pour activer la DN détaillée.</div>`:''}
     <div class="section-label" style="margin-top:0">Références théoriques</div>
     <div style="max-height:34vh;overflow-y:auto;border:0.5px solid var(--border);border-radius:10px;padding:4px 12px;margin-bottom:12px">${groupHtml||'<div class="empty">Aucune référence au catalogue.</div>'}</div>
     <div style="display:flex;gap:8px">
-      ${a?`<button class="btn btn-danger" style="flex:0 0 auto" onclick="deleteAssortiment('${a.id}')"><i class="ti ti-trash"></i></button>`:''}
-      <button class="btn" style="flex:1" onclick="openAssortimentsList()">Retour</button>
+      <button class="btn" style="flex:1" onclick="openAssortimentsList()"><i class="ti ti-arrow-left"></i> Retour</button>
       <button class="btn btn-primary" style="flex:1" onclick="saveAssortiment('${a?a.id:''}')">Enregistrer</button>
-    </div>`;
+    </div>
+    ${a?`<button class="btn" style="margin-top:8px;color:var(--danger-text);border-color:var(--danger-text)" onclick="deleteAssortiment('${a.id}')"><i class="ti ti-trash"></i> Supprimer cet assortiment</button>`:''}`;
   document.getElementById('modal-overlay').classList.add('open');
 }
 
