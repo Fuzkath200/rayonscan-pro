@@ -21,6 +21,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 .topbar h2{font-size:17px;font-weight:500;flex:1}
 .back-btn{background:none;border:none;cursor:pointer;color:var(--text2);font-size:22px;padding:2px 8px 2px 0;display:flex;align-items:center}
 .row{display:flex}
+.dnseg{display:flex;background:var(--bg3);border-radius:8px;padding:3px;gap:3px}
+.dnseg button{flex:1;border:none;background:transparent;font-size:13px;font-weight:500;color:var(--text2);padding:8px 4px;border-radius:6px;font-family:inherit;cursor:pointer}
+.dnseg button.on{background:var(--bg);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.dnchip{font-size:12px;border:0.5px solid var(--border2);border-radius:14px;padding:4px 12px;color:var(--text2);background:var(--bg);white-space:nowrap;cursor:pointer;flex-shrink:0}
+.dnchip.on{border-color:var(--accent);color:var(--success-text);background:var(--success-bg)}
 .logo-badge{width:32px;height:32px;border-radius:8px;background:#1a1a18;display:flex;align-items:center;justify-content:center;color:white;font-size:16px}
 .tabs{display:flex;border:0.5px solid var(--border);border-radius:var(--radius);overflow-x:auto;overflow-y:hidden;margin-bottom:18px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .tabs::-webkit-scrollbar{display:none}
@@ -249,6 +254,9 @@ canvas{display:block;margin:0 auto}
     <button class="sidebar-nav-item" id="snav-synthese" onclick="desktopTab('synthese')">
       <i class="ti ti-currency-euro"></i> Synthèse PA
     </button>
+    <button class="sidebar-nav-item" id="snav-dnvolet" onclick="desktopTab('dnvolet')">
+      <i class="ti ti-chart-line"></i> DN
+    </button>
     <button class="sidebar-nav-item" id="snav-activite" onclick="desktopTab('activite')">
       <i class="ti ti-activity"></i> Activité équipe
     </button>
@@ -307,6 +315,7 @@ canvas{display:block;margin:0 auto}
     <button class="tab4" onclick="switchTab('clients',this)">Clients</button>
     <button class="tab4" onclick="switchTab('agenda',this)">Agenda</button>
     <button class="tab4" onclick="switchTab('synthese',this)">Synthèse PA</button>
+    <button class="tab4" onclick="switchTab('dnvolet',this)">DN</button>
     <button class="tab4" id="tab-btn-equipe" style="display:none" onclick="switchTab('equipe',this)">Équipe</button>
     <button class="tab4" onclick="switchTab('enseignes',this)">Enseignes</button>
     <button class="tab4" onclick="switchTab('catalogue',this)">Catalogue</button>
@@ -328,6 +337,7 @@ canvas{display:block;margin:0 auto}
   <div id="tab-clients" style="display:none"><div id="clients-content"></div></div>
   <div id="tab-agenda" style="display:none"><div id="agenda-content"></div></div>
   <div id="tab-synthese" style="display:none"><div id="synthese-content"></div></div>
+  <div id="tab-dnvolet" style="display:none"><div id="dnvolet-content"></div></div>
   <div id="tab-enseignes" style="display:none"><div id="enseignes-list"></div></div>
   <div id="tab-catalogue" style="display:none">
     <div class="filter-bar" id="catalogue-filter"></div>
@@ -567,7 +577,7 @@ function desktopTab(tab){
   const activeBtn = document.getElementById('snav-'+tab);
   if(activeBtn) activeBtn.classList.add('active');
   // Titre
-  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda', synthese:'Synthèse PA'};
+  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda', synthese:'Synthèse PA', dnvolet:'DN — Distribution numérique'};
   document.getElementById('desktop-topbar-title').textContent = titles[tab]||tab;
   document.getElementById('desktop-back-btn').style.display = 'none';
   // Rendu du contenu
@@ -596,6 +606,11 @@ function desktopTab(tab){
   if(tab==='synthese'){
     content.innerHTML = '<div id="synthese-content-desktop"></div>';
     renderSynthesePA('synthese-content-desktop');
+    return;
+  }
+  if(tab==='dnvolet'){
+    content.innerHTML = '<div id="dnvolet-content-desktop"></div>';
+    renderDNVolet('dnvolet-content-desktop');
     return;
   }
   // Récupère le contenu de l'onglet mobile et le clone dans desktop-content
@@ -1044,7 +1059,7 @@ function showScreen(id){
 function switchTab(tab,btn){
   document.querySelectorAll('.tab4').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients','activite','agenda','synthese'].forEach(t=>{
+  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients','activite','agenda','synthese','dnvolet'].forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el)el.style.display=t===tab?'block':'none';
   });
@@ -1057,6 +1072,7 @@ function switchTab(tab,btn){
   if(tab==='activite')renderActivite('activite-content');
   if(tab==='agenda')renderAgenda('agenda-content');
   if(tab==='synthese')renderSynthesePA('synthese-content');
+  if(tab==='dnvolet')renderDNVolet('dnvolet-content');
 }
 
 // ===== AGENDA =====
@@ -1547,6 +1563,180 @@ function deleteAssortiment(id){
   saveAssortimentsLocal();
   try{if(typeof sb!=='undefined'&&sb)sb.from('assortiments').delete().eq('id',id);}catch(e){}
   openAssortimentsList();
+}
+
+
+// ===== VOLET DN (Azura / MDD / Concurrent) =====
+let dnVoletReleves=[];
+let dnVoletLoaded=false;
+let dnVoletContainerId='dnvolet-content';
+let dnState={cat:'Azura',sub:'',subMarque:'',subFormat:'',groupBy:'enseigne',periode:''};
+
+async function getDNScopeReleves(){
+  const isManager=currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin');
+  let scope=releves.slice();
+  if(isManager){
+    try{
+      const{data:tp}=await sb.from('profiles').select('id').eq('manager_id',currentUser.id);
+      const ids=[currentUser.id].concat((tp||[]).map(p=>p.id));
+      const{data:tr}=await sb.from('releves').select('*').in('user_id',ids);
+      if(tr&&tr.length)scope=tr;
+    }catch(e){}
+  }
+  return scope;
+}
+
+function dnSelPredicate(cat,state){
+  return p=>{
+    if(categorieProduit(p)!==cat)return false;
+    if(cat==='Azura'){ if(state.sub && p.id!==state.sub)return false; }
+    else if(cat==='MDD'){ if(state.sub && (p.marque||'')!==state.sub)return false; }
+    else if(cat==='Concurrent'){
+      if(state.subMarque && (p.marque||'')!==state.subMarque)return false;
+      if(state.subFormat && String(p.poids||'')!==String(state.subFormat))return false;
+    }
+    return true;
+  };
+}
+
+function dnCompute(list,pred){
+  const derniers=derniersRelevesParMagasin(list);
+  let present=0,theo=0,magCouverts=0,magTheo=0;
+  derniers.forEach(r=>{
+    const a=assortimentPourReleve(r);
+    if(!a||!a.refs||!a.refs.length)return;
+    const theoRefs=a.refs.filter(pid=>{const p=products.find(x=>x.id===pid);return p&&pred(p);});
+    if(!theoRefs.length)return;
+    const presentSet=new Set((r.results||[]).filter(l=>(l.count||0)>0).map(l=>l.pid));
+    const pr=theoRefs.filter(pid=>presentSet.has(pid)).length;
+    present+=pr;theo+=theoRefs.length;magTheo++;if(pr>0)magCouverts++;
+  });
+  return {present,theo,dn:theo?present/theo*100:null,magCouverts,magTheo};
+}
+
+function dnByMonth(list,pred){
+  const groups={};
+  list.forEach(r=>{const p=String(r.date||'').split('/');if(p.length!==3)return;const ym=p[2]+'-'+p[1];(groups[ym]=groups[ym]||[]).push(r);});
+  return Object.keys(groups).sort().map(ym=>{const c=dnCompute(groups[ym],pred);return {ym,label:ym.slice(5)+'/'+ym.slice(2,4),dn:c.dn};});
+}
+
+function dnReleveMois(list){
+  const s=new Set();
+  list.forEach(r=>{const p=String(r.date||'').split('/');if(p.length===3)s.add(p[2]+'-'+p[1]);});
+  return [...s].sort();
+}
+function moisLabel(ym){const M=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];const p=ym.split('-');return (M[(+p[1])-1]||p[1])+' '+p[0];}
+
+function dnChartSVG(series){
+  if(!series.length||series.every(s=>s.dn==null))return '<div class="empty" style="padding:1.5rem"><i class="ti ti-chart-line-off"></i>Pas encore de données pour ce graphique.</div>';
+  const W=340,H=165,x0=32,x1=330,yTop=10,yBot=130;
+  const xs=series.length>1?(x1-x0)/(series.length-1):0;
+  const yv=v=>yBot-(v/100)*(yBot-yTop);
+  const pts=series.map((s,i)=>({x:x0+i*xs,y:s.dn==null?null:yv(s.dn),s}));
+  const line=pts.filter(p=>p.y!=null).map(p=>p.x+','+p.y.toFixed(1)).join(' ');
+  const grid=[0,25,50,75,100].map(v=>`<line x1="${x0}" y1="${yv(v)}" x2="${x1}" y2="${yv(v)}" stroke="var(--border)"/><text x="${x0-6}" y="${yv(v)+3}" text-anchor="end" font-size="9" fill="var(--text3)">${v}</text>`).join('');
+  const dots=pts.filter(p=>p.y!=null).map(p=>`<circle cx="${p.x}" cy="${p.y.toFixed(1)}" r="3" fill="var(--accent)"/>`).join('');
+  const xlab=pts.map(p=>`<text x="${p.x}" y="148" text-anchor="middle" font-size="9" fill="var(--text3)">${p.s.label}</text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg">${grid}<polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${dots}${xlab}</svg>`;
+}
+
+async function renderDNVolet(containerId){
+  dnVoletContainerId=containerId||'dnvolet-content';
+  const el=document.getElementById(dnVoletContainerId);
+  if(!el)return;
+  if(!dnVoletLoaded){
+    el.innerHTML='<div class="empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>Chargement…</div>';
+    if(!assortimentsSynced)await syncAssortiments();
+    dnVoletReleves=await getDNScopeReleves();
+    dnVoletLoaded=true;
+  }
+  drawDNVolet();
+}
+
+function dnSetCat(cat){dnState.cat=cat;dnState.sub='';dnState.subMarque='';dnState.subFormat='';drawDNVolet();}
+function dnSetSub(v){dnState.sub=v;drawDNVolet();}
+function dnSetSubMarque(v){dnState.subMarque=v;dnState.subFormat='';drawDNVolet();}
+function dnSetSubFormat(v){dnState.subFormat=v;drawDNVolet();}
+function dnSetGroupBy(v){dnState.groupBy=v;drawDNVolet();}
+function dnSetPeriode(v){dnState.periode=v;drawDNVolet();}
+
+function drawDNVolet(){
+  const el=document.getElementById(dnVoletContainerId);
+  if(!el)return;
+  const cat=dnState.cat;
+  const periodeList=dnReleveMois(dnVoletReleves);
+  const scoped=dnState.periode?dnVoletReleves.filter(r=>{const p=String(r.date||'').split('/');return p.length===3&&(p[2]+'-'+p[1])===dnState.periode;}):dnVoletReleves;
+
+  // Sous-sélecteur
+  let subHtml='';
+  if(cat==='Azura'){
+    const refs=products.filter(p=>categorieProduit(p)==='Azura').sort((a,b)=>(a.ref||'').localeCompare(b.ref||''));
+    subHtml=`<div style="display:flex;gap:7px;overflow-x:auto;padding-bottom:2px;margin-bottom:12px">
+      <span class="dnchip${!dnState.sub?' on':''}" onclick="dnSetSub('')">Toutes réfs</span>
+      ${refs.map(p=>`<span class="dnchip${dnState.sub===p.id?' on':''}" onclick="dnSetSub('${p.id}')">${p.ref||p.marque}</span>`).join('')}
+    </div>`;
+  }else if(cat==='MDD'){
+    const marques=[...new Set(products.filter(p=>categorieProduit(p)==='MDD').map(p=>p.marque).filter(Boolean))].sort();
+    subHtml=`<div style="display:flex;gap:7px;overflow-x:auto;padding-bottom:2px;margin-bottom:12px">
+      <span class="dnchip${!dnState.sub?' on':''}" onclick="dnSetSub('')">Toutes MDD</span>
+      ${marques.map(m=>`<span class="dnchip${dnState.sub===m?' on':''}" onclick="dnSetSub('${String(m).replace(/'/g,"\\'")}')">${m}</span>`).join('')}
+    </div>`;
+  }else{
+    const marques=[...new Set(products.filter(p=>categorieProduit(p)==='Concurrent').map(p=>p.marque).filter(Boolean))].sort();
+    const cur=dnState.subMarque||(marques[0]||'');
+    if(!dnState.subMarque&&marques.length)dnState.subMarque=cur;
+    const formats=[...new Set(products.filter(p=>categorieProduit(p)==='Concurrent'&&p.marque===cur&&p.poids).map(p=>String(p.poids)))].sort((a,b)=>(+a)-(+b));
+    subHtml=`<div style="margin-bottom:10px"><select onchange="dnSetSubMarque(this.value)">${marques.length?marques.map(m=>`<option${m===cur?' selected':''}>${m}</option>`).join(''):'<option>Aucune marque concurrente</option>'}</select></div>
+      <div style="display:flex;gap:7px;overflow-x:auto;padding-bottom:2px;margin-bottom:12px">
+        <span class="dnchip${!dnState.subFormat?' on':''}" onclick="dnSetSubFormat('')">Tous formats</span>
+        ${formats.map(f=>`<span class="dnchip${dnState.subFormat===f?' on':''}" onclick="dnSetSubFormat('${f}')">${f} g</span>`).join('')}
+      </div>`;
+  }
+
+  const pred=dnSelPredicate(cat,dnState);
+  const kpi=dnCompute(scoped,pred);
+  const serie=dnByMonth(dnVoletReleves,pred);
+
+  // Vue croisée
+  const keys=[...new Set(scoped.map(r=>dnState.groupBy==='enseigne'?normEnseigne(r.enseigne):centraleKeyReleve(r)).filter(Boolean))].sort();
+  const crossRows=keys.map(k=>{
+    const sub=scoped.filter(r=>(dnState.groupBy==='enseigne'?normEnseigne(r.enseigne):centraleKeyReleve(r))===k);
+    const a=dnCompute(sub,dnSelPredicate('Azura',{sub:''})).dn;
+    const m=dnCompute(sub,dnSelPredicate('MDD',{sub:''})).dn;
+    const c=dnCompute(sub,dnSelPredicate('Concurrent',{subMarque:'',subFormat:''})).dn;
+    const f=v=>v==null?'—':v.toFixed(0)+' %';
+    return `<tr style="border-top:0.5px solid var(--border)"><td style="padding:7px 4px">${k}</td><td style="text-align:right;padding:7px 4px;font-weight:600">${f(a)}</td><td style="text-align:right;padding:7px 4px">${f(m)}</td><td style="text-align:right;padding:7px 4px">${f(c)}</td></tr>`;
+  }).join('');
+
+  const seg=(v,lbl)=>`<button class="${dnState.cat===v?'on':''}" onclick="dnSetCat('${v}')">${lbl}</button>`;
+  el.innerHTML=`
+    <div class="dnseg" style="margin-bottom:12px">${seg('Azura','Azura')}${seg('MDD','MDD')}${seg('Concurrent','Concurrent')}</div>
+    ${subHtml}
+    <div style="display:flex;gap:10px;margin-bottom:6px">
+      <div style="flex:1;background:var(--bg2);border-radius:8px;padding:11px">
+        <div style="font-size:11px;color:var(--text3)">DN actuelle</div>
+        <div style="font-size:22px;font-weight:600;margin-top:2px;color:${dnColor(kpi.dn)}">${kpi.dn==null?'—':kpi.dn.toFixed(0)+' %'}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px">${kpi.present}/${kpi.theo} réfs présentes</div>
+      </div>
+      <div style="flex:1;background:var(--bg2);border-radius:8px;padding:11px">
+        <div style="font-size:11px;color:var(--text3)">Magasins couverts</div>
+        <div style="font-size:22px;font-weight:600;margin-top:2px">${kpi.magCouverts}<span style="font-size:13px;font-weight:400;color:var(--text3)">/${kpi.magTheo}</span></div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px">au moins 1 réf</div>
+      </div>
+    </div>
+    <div style="margin-bottom:10px"><select onchange="dnSetPeriode(this.value)"><option value="">Toutes périodes</option>${periodeList.map(ym=>`<option value="${ym}"${dnState.periode===ym?' selected':''}>${moisLabel(ym)}</option>`).join('')}</select></div>
+    <div style="margin:4px 0 6px;padding:12px 8px 8px;border:0.5px solid var(--border);border-radius:12px">
+      <div style="font-size:12px;color:var(--text2);font-weight:500;padding:0 8px 6px">Évolution de la DN (%)</div>
+      ${dnChartSVG(serie)}
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px">
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">DN par ${dnState.groupBy==='enseigne'?'enseigne':'centrale'}</div>
+      <div class="dnseg" style="width:180px"><button class="${dnState.groupBy==='enseigne'?'on':''}" style="font-size:11px;padding:5px" onclick="dnSetGroupBy('enseigne')">Enseigne</button><button class="${dnState.groupBy==='centrale'?'on':''}" style="font-size:11px;padding:5px" onclick="dnSetGroupBy('centrale')">Centrale</button></div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="color:var(--text3);font-size:11px"><th style="text-align:left;padding:6px 4px;font-weight:500">${dnState.groupBy==='enseigne'?'Enseigne':'Centrale'}</th><th style="text-align:right;padding:6px 4px;font-weight:500">Azura</th><th style="text-align:right;padding:6px 4px;font-weight:500">MDD</th><th style="text-align:right;padding:6px 4px;font-weight:500">Conc.</th></tr></thead>
+      <tbody>${crossRows||'<tr><td colspan="4" style="padding:12px 4px;color:var(--text3)">Aucune donnée (vérifie que les assortiments ont des références).</td></tr>'}</tbody>
+    </table>`;
 }
 
 
