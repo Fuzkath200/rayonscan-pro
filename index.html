@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.0.0/dist/tabler-icons.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#fff;--bg2:#f7f6f3;--bg3:#f0efe9;--text:#1a1a18;--text2:#6b6a64;--text3:#9c9b95;--border:rgba(0,0,0,0.10);--border2:rgba(0,0,0,0.18);--info-bg:#e6f1fb;--info-text:#185fa5;--warn-bg:#faeeda;--warn-text:#854f0b;--danger-bg:#fcebeb;--danger-text:#a32d2d;--success-bg:#eaf3de;--success-text:#3b6d11;--accent:#1D9E75;--radius:10px;--radius-lg:14px}
 @media(prefers-color-scheme:dark){:root{--bg:#1a1a18;--bg2:#252523;--bg3:#2e2e2b;--text:#f0efe9;--text2:#9c9b95;--text3:#6b6a64;--border:rgba(255,255,255,0.1);--border2:rgba(255,255,255,0.2);--info-bg:#0c2d4a;--info-text:#85b7eb;--warn-bg:#3d2a08;--warn-text:#fac775;--danger-bg:#3a1010;--danger-text:#f09595;--success-bg:#172b08;--success-text:#97c459}}
@@ -245,6 +246,9 @@ canvas{display:block;margin:0 auto}
     <button class="sidebar-nav-item" id="snav-agenda" onclick="desktopTab('agenda')">
       <i class="ti ti-calendar"></i> Agenda
     </button>
+    <button class="sidebar-nav-item" id="snav-synthese" onclick="desktopTab('synthese')">
+      <i class="ti ti-currency-euro"></i> Synthèse PA
+    </button>
     <button class="sidebar-nav-item" id="snav-activite" onclick="desktopTab('activite')">
       <i class="ti ti-activity"></i> Activité équipe
     </button>
@@ -302,6 +306,7 @@ canvas{display:block;margin:0 auto}
     <button class="tab4" onclick="switchTab('activite',this)">Activité</button>
     <button class="tab4" onclick="switchTab('clients',this)">Clients</button>
     <button class="tab4" onclick="switchTab('agenda',this)">Agenda</button>
+    <button class="tab4" onclick="switchTab('synthese',this)">Synthèse PA</button>
     <button class="tab4" id="tab-btn-equipe" style="display:none" onclick="switchTab('equipe',this)">Équipe</button>
     <button class="tab4" onclick="switchTab('enseignes',this)">Enseignes</button>
     <button class="tab4" onclick="switchTab('catalogue',this)">Catalogue</button>
@@ -322,6 +327,7 @@ canvas{display:block;margin:0 auto}
   <div id="tab-activite" style="display:none"><div id="activite-content"></div></div>
   <div id="tab-clients" style="display:none"><div id="clients-content"></div></div>
   <div id="tab-agenda" style="display:none"><div id="agenda-content"></div></div>
+  <div id="tab-synthese" style="display:none"><div id="synthese-content"></div></div>
   <div id="tab-enseignes" style="display:none"><div id="enseignes-list"></div></div>
   <div id="tab-catalogue" style="display:none">
     <div class="filter-bar" id="catalogue-filter"></div>
@@ -561,7 +567,7 @@ function desktopTab(tab){
   const activeBtn = document.getElementById('snav-'+tab);
   if(activeBtn) activeBtn.classList.add('active');
   // Titre
-  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda'};
+  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda', synthese:'Synthèse PA'};
   document.getElementById('desktop-topbar-title').textContent = titles[tab]||tab;
   document.getElementById('desktop-back-btn').style.display = 'none';
   // Rendu du contenu
@@ -585,6 +591,11 @@ function desktopTab(tab){
   if(tab==='agenda'){
     content.innerHTML = '<div id="agenda-content-desktop"></div>';
     renderAgenda('agenda-content-desktop');
+    return;
+  }
+  if(tab==='synthese'){
+    content.innerHTML = '<div id="synthese-content-desktop"></div>';
+    renderSynthesePA('synthese-content-desktop');
     return;
   }
   // Récupère le contenu de l'onglet mobile et le clone dans desktop-content
@@ -1033,7 +1044,7 @@ function showScreen(id){
 function switchTab(tab,btn){
   document.querySelectorAll('.tab4').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients','activite','agenda'].forEach(t=>{
+  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients','activite','agenda','synthese'].forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el)el.style.display=t===tab?'block':'none';
   });
@@ -1045,6 +1056,7 @@ function switchTab(tab,btn){
   if(tab==='clients')renderClients('clients-content','');
   if(tab==='activite')renderActivite('activite-content');
   if(tab==='agenda')renderAgenda('agenda-content');
+  if(tab==='synthese')renderSynthesePA('synthese-content');
 }
 
 // ===== AGENDA =====
@@ -1063,12 +1075,30 @@ const AGENDA_TYPES={
 };
 const AGENDA_DUREES=[{v:20,l:'20 min'},{v:40,l:'40 min'},{v:50,l:'50 min'},{v:60,l:'1h'},{v:90,l:'1h30'},{v:120,l:'2h'},{v:180,l:'3h'}];
 
-function loadAgenda(){
+let agendaSynced=false;
+function loadAgendaCache(){
   try{agenda=JSON.parse(localStorage.getItem('rsp_agenda')||'[]');}catch(e){agenda=[];}
   if(!Array.isArray(agenda))agenda=[];
   if(currentUser)agenda=agenda.filter(a=>!a.user_id||a.user_id===currentUser.id);
 }
+function loadAgenda(){loadAgendaCache();}
 function saveAgenda(){localStorage.setItem('rsp_agenda',JSON.stringify(agenda));}
+function agendaRow(a){return{id:a.id,user_id:currentUser?currentUser.id:null,magasin:a.magasin||null,enseigne:a.enseigne||null,date:a.date||null,heure:a.heure||null,duree:a.duree||null,type:a.type||null,note:a.note||null};}
+async function syncAgenda(){
+  agendaSynced=true;
+  if(!currentUser||typeof sb==='undefined'||!sb)return;
+  try{
+    const{data,error}=await sb.from('agenda').select('*').eq('user_id',currentUser.id);
+    if(error)throw error;
+    const remote=data||[];
+    const remoteIds=new Set(remote.map(r=>r.id));
+    const localOnly=agenda.filter(a=>!remoteIds.has(a.id));
+    if(localOnly.length){await sb.from('agenda').upsert(localOnly.map(agendaRow));}
+    agenda=remote.map(r=>({id:r.id,user_id:r.user_id,magasin:r.magasin,enseigne:r.enseigne,date:r.date,heure:r.heure,duree:r.duree,type:r.type,note:r.note})).concat(localOnly);
+    saveAgenda();
+    if(document.getElementById(agendaContainerId))renderAgenda(agendaContainerId);
+  }catch(e){/* hors-ligne ou table absente : on garde le cache local */}
+}
 
 function dmyToDate(s){const p=String(s||'').split('/');if(p.length!==3)return null;const d=new Date(+p[2],+p[1]-1,+p[0]);return isNaN(d.getTime())?null:d;}
 function dateToDmy(d){return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
@@ -1101,7 +1131,7 @@ function renderAgenda(containerId){
   const el=document.getElementById(agendaContainerId);
   if(!el)return;
   if(!agendaSelectedDate)agendaSelectedDate=agendaToday();
-  loadAgenda();
+  if(!agendaSynced)syncAgenda();
   const aRevoir=clientsARevoir();
   const evs=agenda.filter(a=>a.date===agendaSelectedDate).sort((a,b)=>String(a.heure).localeCompare(String(b.heure)));
   const bannerHtml=aRevoir.length?`<div onclick="agendaShowRevoir()" style="margin:0 0 12px;background:var(--warn-bg);border-radius:var(--radius);padding:9px 12px;display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -1208,12 +1238,15 @@ function saveAgendaEvent(id){
   agendaSelectedDate=date;
   closeModal();
   renderAgenda(agendaContainerId);
+  const ev=agenda.find(x=>x.id===(id||agenda[agenda.length-1].id));
+  try{if(typeof sb!=='undefined'&&sb&&currentUser&&ev)sb.from('agenda').upsert([agendaRow(ev)]);}catch(e){}
 }
 
 function deleteAgendaEvent(id){
   if(!confirm('Supprimer ce rendez-vous ?'))return;
   agenda=agenda.filter(x=>x.id!==id);
   saveAgenda();
+  try{if(typeof sb!=='undefined'&&sb)sb.from('agenda').delete().eq('id',id);}catch(e){}
   closeModal();
   renderAgenda(agendaContainerId);
 }
@@ -1243,6 +1276,111 @@ function releveFromAgenda(magasin,enseigne){
     const me=document.getElementById('r-magasin');if(me)me.value=magasin;
     if(enseigne){const ee=document.getElementById('r-enseigne');if(ee){ee.value=enseigne;updateCentraleOptions();}}
   },40);
+}
+
+
+// ===== SYNTHÈSE PA =====
+let syntheseAllRows=[];
+let syntheseContainerId='synthese-content';
+
+async function synthesePAData(){
+  const isManager=currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin');
+  let scope=releves.slice();
+  if(isManager){
+    try{
+      const{data:tp}=await sb.from('profiles').select('id').eq('manager_id',currentUser.id);
+      const ids=[currentUser.id].concat((tp||[]).map(p=>p.id));
+      const{data:tr}=await sb.from('releves').select('*').in('user_id',ids);
+      if(tr&&tr.length)scope=tr;
+    }catch(e){}
+  }
+  const MOISN=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  const rows=[];
+  scope.forEach(r=>{
+    (r.results||[]).forEach(l=>{
+      if(l.pa_ht==null||l.pa_ht==='')return; // PA HT renseigné uniquement
+      const p=products.find(x=>x.id===l.pid)||{};
+      const prix=l.prix_constate;
+      const front=(prix&&l.pa_ht)?(prix-l.pa_ht)/prix*100:null;
+      const wk=isoWeekKey(r.date);const sem=wk?wk.split('-S')[1]:'';
+      const dP=String(r.date||'').split('/');
+      const mois=(dP.length===3&&+dP[1]>=1&&+dP[1]<=12)?MOISN[+dP[1]-1]:'';
+      rows.push({date:r.date||'',mois,semaine:sem,enseigne:normEnseigne(r.enseigne),centrale:r.centrale||'',magasin:r.magasin||'',origine:p.origine||'',segment:p.segment||'',marque:p.marque||'',ref:p.ref||'',pa_ht:l.pa_ht,prix_uvc:prix,front,vmh:l.vmh});
+    });
+  });
+  // tri date décroissante
+  rows.sort((a,b)=>{const ka=String(a.date).split('/').reverse().join('-'),kb=String(b.date).split('/').reverse().join('-');return kb.localeCompare(ka);});
+  return rows;
+}
+
+async function renderSynthesePA(containerId){
+  syntheseContainerId=containerId||'synthese-content';
+  const el=document.getElementById(syntheseContainerId);
+  if(!el)return;
+  el.innerHTML='<div class="empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>Chargement…</div>';
+  syntheseAllRows=await synthesePAData();
+  const uniq=k=>[...new Set(syntheseAllRows.map(r=>r[k]).filter(Boolean))].sort();
+  const opt=(arr,ph)=>`<option value="">${ph}</option>`+arr.map(v=>`<option>${v}</option>`).join('');
+  el.innerHTML=`
+    <div class="section-label" style="margin-top:0">Filtres</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+      <select id="sy-mois" onchange="applySyntheseFilter()">${opt(uniq('mois'),'Mois (tous)')}</select>
+      <select id="sy-enseigne" onchange="applySyntheseFilter()">${opt(uniq('enseigne'),'Enseigne (toutes)')}</select>
+      <select id="sy-centrale" onchange="applySyntheseFilter()">${opt(uniq('centrale'),'Centrale (toutes)')}</select>
+      <select id="sy-origine" onchange="applySyntheseFilter()">${opt(uniq('origine'),'Origine (toutes)')}</select>
+      <select id="sy-segment" onchange="applySyntheseFilter()">${opt(uniq('segment'),'Segment (tous)')}</select>
+      <select id="sy-marque" onchange="applySyntheseFilter()">${opt(uniq('marque'),'Marque (toutes)')}</select>
+    </div>
+    <div id="synthese-results"></div>`;
+  applySyntheseFilter();
+}
+
+function syntheseFiltered(){
+  const g=id=>{const e=document.getElementById(id);return e?e.value:'';};
+  const f={mois:g('sy-mois'),enseigne:g('sy-enseigne'),centrale:g('sy-centrale'),origine:g('sy-origine'),segment:g('sy-segment'),marque:g('sy-marque')};
+  return syntheseAllRows.filter(r=>(!f.mois||r.mois===f.mois)&&(!f.enseigne||r.enseigne===f.enseigne)&&(!f.centrale||r.centrale===f.centrale)&&(!f.origine||r.origine===f.origine)&&(!f.segment||r.segment===f.segment)&&(!f.marque||r.marque===f.marque));
+}
+
+function applySyntheseFilter(){
+  const rows=syntheseFiltered();
+  const el=document.getElementById('synthese-results');
+  if(!el)return;
+  const eur=v=>(v==null||v===''||isNaN(v))?'—':Number(v).toFixed(2).replace('.',',')+' €';
+  const pct=v=>(v==null||isNaN(v))?'—':Number(v).toFixed(1).replace('.',',')+' %';
+  const preview=rows.slice(0,60);
+  el.innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:10px;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--text2)"><strong>${rows.length}</strong> ligne${rows.length>1?'s':''} (PA HT renseigné)</span>
+      <button class="btn btn-primary" style="width:auto;margin:0;padding:7px 12px;font-size:13px" onclick="exportSynthesePA()"><i class="ti ti-file-spreadsheet" aria-hidden="true"></i> Exporter Excel</button>
+    </div>
+    ${rows.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="text-align:left;color:var(--text3)">
+        <th style="padding:6px 8px;font-weight:500">Date</th><th style="padding:6px 8px;font-weight:500">Enseigne</th><th style="padding:6px 8px;font-weight:500">Magasin</th><th style="padding:6px 8px;font-weight:500">Marque</th><th style="padding:6px 8px;font-weight:500;text-align:right">PA HT</th><th style="padding:6px 8px;font-weight:500;text-align:right">Prix uvc</th><th style="padding:6px 8px;font-weight:500;text-align:right">Front</th>
+      </tr></thead>
+      <tbody>${preview.map(r=>`<tr style="border-top:0.5px solid var(--border)">
+        <td style="padding:6px 8px;white-space:nowrap">${r.date}</td><td style="padding:6px 8px">${r.enseigne}</td><td style="padding:6px 8px">${r.magasin}</td><td style="padding:6px 8px">${r.marque}</td>
+        <td style="padding:6px 8px;text-align:right;white-space:nowrap">${eur(r.pa_ht)}</td><td style="padding:6px 8px;text-align:right;white-space:nowrap">${eur(r.prix_uvc)}</td><td style="padding:6px 8px;text-align:right;white-space:nowrap">${pct(r.front)}</td>
+      </tr>`).join('')}</tbody></table>
+      ${rows.length>60?`<div style="font-size:11px;color:var(--text3);padding:8px 0">… et ${rows.length-60} autres lignes — toutes incluses dans l'export Excel.</div>`:''}
+    </div>`:'<div class="empty"><i class="ti ti-filter-off"></i>Aucune ligne avec PA HT pour ces filtres.</div>'}`;
+}
+
+function exportSynthesePA(){
+  const rows=syntheseFiltered();
+  if(!rows.length){alert('Aucune ligne à exporter.');return;}
+  if(typeof XLSX==='undefined'){alert('Le module Excel n\'est pas encore chargé, réessaie dans un instant.');return;}
+  const n=v=>(v==null||v===''||isNaN(v))?'':Number(v);
+  const header=['Date','Mois','N° Semaine','Enseigne','Centrale','Magasin','Origine','Segment','Marque','Référence','PA HT','Prix uvc','Front margin (%)','VMH'];
+  const data=[header].concat(rows.map(r=>[
+    r.date, r.mois, (r.semaine?Number(r.semaine):''), r.enseigne, r.centrale, r.magasin, r.origine, r.segment, r.marque, r.ref,
+    n(r.pa_ht), n(r.prix_uvc), (r.front==null?'':Number(r.front.toFixed(2))), n(r.vmh)
+  ]));
+  const ws=XLSX.utils.aoa_to_sheet(data);
+  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length,c:header.length-1}})};
+  ws['!cols']=[{wch:11},{wch:9},{wch:8},{wch:15},{wch:12},{wch:28},{wch:15},{wch:9},{wch:18},{wch:16},{wch:9},{wch:9},{wch:14},{wch:7}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Synthèse PA');
+  XLSX.writeFile(wb,'synthese_PA_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
 
