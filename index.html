@@ -968,7 +968,7 @@ async function init(){
     const btn=document.getElementById('tab-btn-equipe');
     if(btn)btn.style.display='';
   }
-  renderHome();initPhotoListener();await loadDN();await loadContacts();await loadJoursTerrain();if(window.innerWidth>=768)initDesktop();
+  renderHome();initPhotoListener();await loadDN();loadAssortimentsCache();syncAssortiments();await loadContacts();await loadJoursTerrain();if(window.innerWidth>=768)initDesktop();
   }catch(e){
     setSyncStatus('error','Hors ligne');
     centrales=JSON.parse(localStorage.getItem('rsp_centrales')||'null')||JSON.parse(JSON.stringify(DEFAULT_CENTRALES));
@@ -1384,7 +1384,170 @@ function exportSynthesePA(){
 }
 
 
-function renderHome(){renderReleves();renderCatalogue();renderEnseignes();renderCentrales();loadAgenda();}
+// ===== ASSORTIMENTS PAR PÉRIODE =====
+let assortiments=[];            // {id,nom,centrale,saison,date_debut,date_fin,refs:[pid],theorique_count}
+let assortimentsSynced=false;
+function loadAssortimentsCache(){
+  try{assortiments=JSON.parse(localStorage.getItem('rsp_assortiments')||'[]');}catch(e){assortiments=[];}
+  if(!Array.isArray(assortiments))assortiments=[];
+}
+function saveAssortimentsLocal(){localStorage.setItem('rsp_assortiments',JSON.stringify(assortiments));}
+function assoRow(a){return{id:a.id,nom:a.nom||null,centrale:a.centrale||null,saison:a.saison||null,date_debut:a.date_debut||null,date_fin:a.date_fin||null,refs:(a.refs||[]),theorique_count:a.theorique_count||null};}
+function assoFromRow(r){return{id:r.id,nom:r.nom,centrale:r.centrale,saison:r.saison,date_debut:r.date_debut||'',date_fin:r.date_fin||'',refs:(typeof r.refs==='string'?(JSON.parse(r.refs||'[]')):(r.refs||[])),theorique_count:r.theorique_count};}
+
+function migrateTheoriqueToAssortiments(){
+  // Crée les assortiments Été/Hiver 2026 à partir du théorique actuel (une seule fois)
+  if(assortiments.length)return false;
+  const keys=Object.keys(dnTheorique||{});
+  const created=[];
+  let seq=0;
+  keys.forEach(k=>{
+    const th=dnTheorique[k]||{};
+    if(th.ete>0)created.push({id:'as'+Date.now()+(seq++),nom:'Été 2026',centrale:k,saison:'ete',date_debut:'',date_fin:'',refs:[],theorique_count:th.ete});
+    if(th.hiver>0)created.push({id:'as'+Date.now()+(seq++),nom:'Hiver 2026',centrale:k,saison:'hiver',date_debut:'',date_fin:'',refs:[],theorique_count:th.hiver});
+  });
+  if(created.length){assortiments=created;saveAssortimentsLocal();return true;}
+  return false;
+}
+
+async function syncAssortiments(){
+  assortimentsSynced=true;
+  if(typeof sb==='undefined'||!sb){migrateTheoriqueToAssortiments();return;}
+  try{
+    const{data,error}=await sb.from('assortiments').select('*');
+    if(error)throw error;
+    let remote=(data||[]).map(assoFromRow);
+    // Migration initiale si la base est vide ET pas encore d'assortiments locaux
+    if(!remote.length && !assortiments.length){ if(migrateTheoriqueToAssortiments()){ await sb.from('assortiments').upsert(assortiments.map(assoRow)); remote=assortiments.slice(); } }
+    const remoteIds=new Set(remote.map(r=>r.id));
+    const localOnly=assortiments.filter(a=>!remoteIds.has(a.id));
+    if(localOnly.length){await sb.from('assortiments').upsert(localOnly.map(assoRow));}
+    assortiments=remote.concat(localOnly);
+    saveAssortimentsLocal();
+    if(document.getElementById('assortiments-list'))renderAssortimentsList();
+  }catch(e){ migrateTheoriqueToAssortiments(); }
+}
+
+function inPeriodeAsso(a,dkey){
+  const d1=a.date_debut?String(a.date_debut).split('/').reverse().join('-'):null;
+  const d2=a.date_fin?String(a.date_fin).split('/').reverse().join('-'):null;
+  if(d1&&dkey<d1)return false;
+  if(d2&&dkey>d2)return false;
+  return true;
+}
+function assortimentPourReleve(r,saisonOverride){
+  const key=centraleKeyReleve(r);
+  const saison=saisonOverride||getSaisonReleve(r.date);
+  const dk=(r.date||'').split('/').reverse().join('-');
+  const cands=assortiments.filter(a=>a.centrale===key&&a.saison===saison&&inPeriodeAsso(a,dk));
+  cands.sort((a,b)=>String(b.date_debut||'').split('/').reverse().join('-').localeCompare(String(a.date_debut||'').split('/').reverse().join('-')));
+  return cands[0]||null;
+}
+
+// Catégorie d'un produit
+function categorieProduit(p){
+  if(estMarqueAzura(p.marque))return 'Azura';
+  if((p.type_marque||'').toUpperCase()==='MDD')return 'MDD';
+  return 'Concurrent';
+}
+
+function openAssortimentsList(){
+  if(!assortimentsSynced){syncAssortiments();}
+  const c=document.getElementById('modal-content');
+  const byCentrale={};
+  assortiments.forEach(a=>{(byCentrale[a.centrale]=byCentrale[a.centrale]||[]).push(a);});
+  const keys=Object.keys(byCentrale).sort();
+  const body=keys.length?keys.map(k=>`
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">${k}</div>
+      ${byCentrale[k].map(a=>`<div onclick="openAssortimentModal('${a.id}')" style="display:flex;align-items:center;justify-content:space-between;padding:9px 10px;background:var(--bg3);border-radius:8px;margin-bottom:5px;cursor:pointer">
+        <div><span style="font-size:14px;font-weight:500">${a.nom||'(sans nom)'}</span> <span style="font-size:11px;color:var(--text3)">· ${a.saison==='ete'?'Été':'Hiver'}${(a.date_debut||a.date_fin)?' · '+(a.date_debut||'…')+'→'+(a.date_fin||'…'):''}</span></div>
+        <span style="font-size:12px;color:var(--accent);font-weight:600;flex-shrink:0">${a.refs&&a.refs.length?a.refs.length+' réfs':(a.theorique_count?a.theorique_count+' (à définir)':'0 réf')}</span>
+      </div>`).join('')}
+    </div>`).join(''):'<div class="empty"><i class="ti ti-list"></i>Aucun assortiment. Crée le premier.</div>';
+  c.innerHTML=`<h3>Assortiments par période</h3>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px">Liste théorique des références par centrale, saison et période. Un relevé utilise l'assortiment dont la période contient sa date.</p>
+    <div style="max-height:50vh;overflow-y:auto;margin-bottom:12px">${body}</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" style="flex:1" onclick="closeModal()">Fermer</button>
+      <button class="btn btn-primary" style="flex:1" onclick="openAssortimentModal()"><i class="ti ti-plus"></i> Nouvel assortiment</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function renderAssortimentsList(){ if(document.getElementById('modal-content'))openAssortimentsList(); }
+
+function openAssortimentModal(id){
+  const a=id?assortiments.find(x=>x.id===id):null;
+  const keys=centraleKeysAll();
+  const cats=['Azura','MDD','Concurrent'];
+  const refSet=new Set((a&&a.refs)||[]);
+  const prods=products.slice().sort((p,q)=>(p.marque||'').localeCompare(q.marque||'')||(p.ref||'').localeCompare(q.ref||''));
+  const groupHtml=cats.map(cat=>{
+    const list=prods.filter(p=>categorieProduit(p)===cat);
+    if(!list.length)return'';
+    return `<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.04em;margin:8px 0 4px">${cat}</div>`+
+      list.map(p=>`<label style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;font-size:13px">
+        <input type="checkbox" class="aso-ref" data-pid="${p.id}" ${refSet.has(p.id)?'checked':''} style="width:17px;height:17px;flex-shrink:0">
+        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.marque||'?'} — ${p.ref||'?'}${p.poids?' · '+p.poids+'g':''}</span>
+      </label>`).join('');
+  }).join('');
+  const c=document.getElementById('modal-content');
+  c.innerHTML=`<h3>${a?"Modifier l'assortiment":"Nouvel assortiment"}</h3>
+    <div class="form-group"><label>Nom</label><input id="aso-nom" value="${a?String(a.nom||'').replace(/"/g,'&quot;'):''}" placeholder="Ex. Été 2026"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Centrale / enseigne</label>
+        <select id="aso-centrale">${keys.map(k=>`<option${a&&a.centrale===k?' selected':''}>${k}</option>`).join('')}</select>
+      </div>
+      <div class="form-group"><label>Saison</label>
+        <select id="aso-saison"><option value="ete"${a&&a.saison==='ete'?' selected':''}>Été</option><option value="hiver"${a&&a.saison==='hiver'?' selected':''}>Hiver</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Début (jj/mm/aaaa)</label><input id="aso-debut" value="${a?(a.date_debut||''):''}" placeholder="optionnel"></div>
+      <div class="form-group"><label>Fin (jj/mm/aaaa)</label><input id="aso-fin" value="${a?(a.date_fin||''):''}" placeholder="optionnel"></div>
+    </div>
+    ${(a&&(!a.refs||!a.refs.length)&&a.theorique_count)?`<div style="font-size:11px;color:var(--warn-text);background:var(--warn-bg);padding:7px 10px;border-radius:8px;margin-bottom:8px">Ancien théorique : ${a.theorique_count} réfs (nombre). Coche ci-dessous les références précises pour activer la DM détaillée.</div>`:''}
+    <div class="section-label" style="margin-top:0">Références théoriques</div>
+    <div style="max-height:34vh;overflow-y:auto;border:0.5px solid var(--border);border-radius:10px;padding:4px 12px;margin-bottom:12px">${groupHtml||'<div class="empty">Aucune référence au catalogue.</div>'}</div>
+    <div style="display:flex;gap:8px">
+      ${a?`<button class="btn btn-danger" style="flex:0 0 auto" onclick="deleteAssortiment('${a.id}')"><i class="ti ti-trash"></i></button>`:''}
+      <button class="btn" style="flex:1" onclick="openAssortimentsList()">Retour</button>
+      <button class="btn btn-primary" style="flex:1" onclick="saveAssortiment('${a?a.id:''}')">Enregistrer</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function saveAssortiment(id){
+  const nom=(document.getElementById('aso-nom').value||'').trim();
+  const centrale=document.getElementById('aso-centrale').value;
+  const saison=document.getElementById('aso-saison').value;
+  const date_debut=(document.getElementById('aso-debut').value||'').trim();
+  const date_fin=(document.getElementById('aso-fin').value||'').trim();
+  const refs=Array.from(document.querySelectorAll('.aso-ref')).filter(cb=>cb.checked).map(cb=>cb.dataset.pid);
+  if(!nom){alert("Donne un nom à l'assortiment.");return;}
+  let ev;
+  if(id){
+    const i=assortiments.findIndex(x=>x.id===id);
+    if(i>-1){assortiments[i]={...assortiments[i],nom,centrale,saison,date_debut,date_fin,refs};ev=assortiments[i];}
+  }else{
+    ev={id:'as'+Date.now(),nom,centrale,saison,date_debut,date_fin,refs,theorique_count:null};
+    assortiments.push(ev);
+  }
+  saveAssortimentsLocal();
+  try{if(typeof sb!=='undefined'&&sb&&ev)sb.from('assortiments').upsert([assoRow(ev)]);}catch(e){}
+  openAssortimentsList();
+}
+
+function deleteAssortiment(id){
+  if(!confirm('Supprimer cet assortiment ?'))return;
+  assortiments=assortiments.filter(x=>x.id!==id);
+  saveAssortimentsLocal();
+  try{if(typeof sb!=='undefined'&&sb)sb.from('assortiments').delete().eq('id',id);}catch(e){}
+  openAssortimentsList();
+}
+
+
+function renderHome(){renderReleves();renderCatalogue();renderEnseignes();renderCentrales();loadAgenda();loadAssortimentsCache();}
 
 async function renderEquipe(){
   const el=document.getElementById('equipe-list');
@@ -1493,7 +1656,7 @@ async function renderDashboard(containerId){
 
   const theoriqueVide = Object.keys(dnTheorique).length===0;
   const configBtn = isManager
-    ? `<button class="btn-sm" onclick="openDNConfig()" style="background:var(--bg3);color:var(--text);border:0.5px solid var(--border)"><i class="ti ti-settings"></i> Configurer le théorique</button>`
+    ? `<button class="btn-sm" onclick="openDNConfig()" style="background:var(--bg3);color:var(--text);border:0.5px solid var(--border)"><i class="ti ti-settings"></i> Configurer le théorique</button> <button class="btn-sm" onclick="openAssortimentsList()" style="background:var(--bg3);color:var(--text);border:0.5px solid var(--border)"><i class="ti ti-list-check"></i> Assortiments par période</button>`
     : "";
 
   const glob = aggregeDN(workReleves);
