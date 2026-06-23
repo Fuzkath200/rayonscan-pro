@@ -1027,6 +1027,7 @@ async function init(){
     // Vues perso (Relevés, Clients, Fiche) = uniquement les relevés de l'utilisateur connecté.
     // Les vues équipe (Dashboard DN, Activité) rechargent l'équipe via leurs propres requêtes.
     releves=(relRes.data||[]).filter(r=>(r.user_id||currentUser.id)===currentUser.id);
+    normMlReleves(releves);
     reapplyQueueToReleves();   // garde les relevés encore en file (non synchronisés)
     saveLocal();
     magasins=magRes.data||[];
@@ -1043,6 +1044,7 @@ async function init(){
     centrales=JSON.parse(localStorage.getItem('rsp_centrales')||'null')||JSON.parse(JSON.stringify(DEFAULT_CENTRALES));
     products=JSON.parse(localStorage.getItem('rsp_products')||'null')||JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
     releves=JSON.parse(localStorage.getItem('rsp_releves')||'[]').filter(r=>!currentUser||(r.user_id||currentUser.id)===currentUser.id);
+    normMlReleves(releves);
     reapplyQueueToReleves();
     await migrateIntermarche();
     loadDNLocal();
@@ -1808,6 +1810,7 @@ function drawDNVolet(){
 }
 
 
+function normMlReleves(list){(list||[]).forEach(r=>{(r.results||[]).forEach(l=>{if(l.ml==null||isNaN(l.ml))l.ml=0;if(l.count==null||isNaN(l.count))l.count=0;});});}
 function renderHome(){renderReleves();renderCatalogue();renderEnseignes();renderCentrales();loadAgenda();loadAssortimentsCache();}
 
 async function renderEquipe(){
