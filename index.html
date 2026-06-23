@@ -254,9 +254,6 @@ canvas{display:block;margin:0 auto}
     <button class="sidebar-nav-item" id="snav-synthese" onclick="desktopTab('synthese')">
       <i class="ti ti-currency-euro"></i> Synthèse PA
     </button>
-    <button class="sidebar-nav-item" id="snav-dnvolet" onclick="desktopTab('dnvolet')">
-      <i class="ti ti-chart-line"></i> DN
-    </button>
     <button class="sidebar-nav-item" id="snav-activite" onclick="desktopTab('activite')">
       <i class="ti ti-activity"></i> Activité équipe
     </button>
@@ -315,7 +312,6 @@ canvas{display:block;margin:0 auto}
     <button class="tab4" onclick="switchTab('clients',this)">Clients</button>
     <button class="tab4" onclick="switchTab('agenda',this)">Agenda</button>
     <button class="tab4" onclick="switchTab('synthese',this)">Synthèse PA</button>
-    <button class="tab4" onclick="switchTab('dnvolet',this)">DN</button>
     <button class="tab4" id="tab-btn-equipe" style="display:none" onclick="switchTab('equipe',this)">Équipe</button>
     <button class="tab4" onclick="switchTab('enseignes',this)">Enseignes</button>
     <button class="tab4" onclick="switchTab('catalogue',this)">Catalogue</button>
@@ -337,7 +333,6 @@ canvas{display:block;margin:0 auto}
   <div id="tab-clients" style="display:none"><div id="clients-content"></div></div>
   <div id="tab-agenda" style="display:none"><div id="agenda-content"></div></div>
   <div id="tab-synthese" style="display:none"><div id="synthese-content"></div></div>
-  <div id="tab-dnvolet" style="display:none"><div id="dnvolet-content"></div></div>
   <div id="tab-enseignes" style="display:none"><div id="enseignes-list"></div></div>
   <div id="tab-catalogue" style="display:none">
     <div class="filter-bar" id="catalogue-filter"></div>
@@ -577,7 +572,7 @@ function desktopTab(tab){
   const activeBtn = document.getElementById('snav-'+tab);
   if(activeBtn) activeBtn.classList.add('active');
   // Titre
-  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda', synthese:'Synthèse PA', dnvolet:'DN — Distribution numérique'};
+  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda', synthese:'Synthèse PA'};
   document.getElementById('desktop-topbar-title').textContent = titles[tab]||tab;
   document.getElementById('desktop-back-btn').style.display = 'none';
   // Rendu du contenu
@@ -606,11 +601,6 @@ function desktopTab(tab){
   if(tab==='synthese'){
     content.innerHTML = '<div id="synthese-content-desktop"></div>';
     renderSynthesePA('synthese-content-desktop');
-    return;
-  }
-  if(tab==='dnvolet'){
-    content.innerHTML = '<div id="dnvolet-content-desktop"></div>';
-    renderDNVolet('dnvolet-content-desktop');
     return;
   }
   // Récupère le contenu de l'onglet mobile et le clone dans desktop-content
@@ -1125,7 +1115,7 @@ function showScreen(id){
 function switchTab(tab,btn){
   document.querySelectorAll('.tab4').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients','activite','agenda','synthese','dnvolet'].forEach(t=>{
+  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients','activite','agenda','synthese'].forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el)el.style.display=t===tab?'block':'none';
   });
@@ -1138,7 +1128,6 @@ function switchTab(tab,btn){
   if(tab==='activite')renderActivite('activite-content');
   if(tab==='agenda')renderAgenda('agenda-content');
   if(tab==='synthese')renderSynthesePA('synthese-content');
-  if(tab==='dnvolet')renderDNVolet('dnvolet-content');
 }
 
 // ===== AGENDA =====
@@ -1894,92 +1883,13 @@ function derniersParUserMagasin(list){
 async function renderDashboard(containerId){
   const el=document.getElementById(containerId);
   if(!el) return;
-  el.innerHTML='<div class="empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>Calcul de la DN…</div>';
-  try{ await loadDN(); }catch(e){} // relit le théorique + marques partagés (évite tout décalage de cache entre comptes)
-
+  try{ await loadDN(); }catch(e){}
   const isManager = currentProfile && (currentProfile.role==="directeur"||currentProfile.role==="admin");
-  let workReleves = releves.slice();
-  const userNames = {};
-  if(currentUser && currentProfile) userNames[currentUser.id]=((currentProfile.prenom||"")+" "+(currentProfile.nom||"")).trim()||"Moi";
-
-  if(isManager){
-    try{
-      const {data:teamProfiles}=await sb.from("profiles").select("*").eq("manager_id",currentUser.id);
-      const ids=(teamProfiles||[]).map(p=>p.id);
-      (teamProfiles||[]).forEach(p=>{ userNames[p.id]=((p.prenom||"")+" "+(p.nom||"")).trim()||"—"; });
-      const allIds=[currentUser.id].concat(ids);
-      const {data:teamReleves}=await sb.from("releves").select("*").in("user_id",allIds);
-      if(teamReleves && teamReleves.length) workReleves=teamReleves;
-    }catch(e){}
-  }
-
-  const theoriqueVide = Object.keys(dnTheorique).length===0;
   const configBtn = isManager
     ? `<button class="btn-sm" onclick="openDNConfig()" style="background:var(--bg3);color:var(--text);border:0.5px solid var(--border)"><i class="ti ti-settings"></i> Configurer le théorique</button> <button class="btn-sm" onclick="openAssortimentsList()" style="background:var(--bg3);color:var(--text);border:0.5px solid var(--border)"><i class="ti ti-list-check"></i> Assortiments par période</button>`
     : "";
-
-  const glob = aggregeDN(workReleves);
-
-  // Par enseigne
-  const parEns={};
-  glob.derniers.forEach(r=>{
-    const d=calcDNReleve(r);
-    if(d.dn==null) return;
-    const e=r.enseigne||"—";
-    if(!parEns[e]) parEns[e]={sum:0,n:0};
-    parEns[e].sum+=d.dn; parEns[e].n++;
-  });
-  const ensRows=Object.keys(parEns).sort((a,b)=>(parEns[b].sum/parEns[b].n)-(parEns[a].sum/parEns[a].n))
-    .map(e=>barRow(e,parEns[e].sum/parEns[e].n,parEns[e].n)).join("");
-
-  // Par commercial (manager seulement)
-  let commSection="";
-  if(isManager){
-    const parComm={};
-    derniersParUserMagasin(workReleves).forEach(r=>{
-      const d=calcDNReleve(r);
-      if(d.dn==null) return;
-      const u=r.user_id||"?";
-      if(!parComm[u]) parComm[u]={sum:0,n:0};
-      parComm[u].sum+=d.dn; parComm[u].n++;
-    });
-    const commRows=Object.keys(parComm).sort((a,b)=>(parComm[b].sum/parComm[b].n)-(parComm[a].sum/parComm[a].n))
-      .map(u=>barRow(userNames[u]||"Commercial",parComm[u].sum/parComm[u].n,parComm[u].n)).join("");
-    if(commRows) commSection=`<div class="section-label">DN par commercial</div><div class="card" style="padding:12px">${commRows}</div>`;
-  }
-
-  // Détail par magasin
-  const detRows = glob.derniers.slice().sort((a,b)=>{
-    const da=calcDNReleve(a).dn, db=calcDNReleve(b).dn;
-    return (db==null?-1:db)-(da==null?-1:da);
-  }).filter(r=>calcDNReleve(r).dn!=null).map(r=>{
-    const d=calcDNReleve(r);
-    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:0.5px solid var(--border)">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.magasin||"—"}</div>
-        <div style="font-size:11px;color:var(--text3)">${d.key||"—"} · ${d.saison==="ete"?"été":"hiver"} · ${d.present}/${d.cible} réfs</div>
-      </div>
-      <div style="font-size:14px"><strong style="color:${dnColor(d.dn)}">${Math.round(d.dn)}%</strong></div>
-    </div>`;
-  }).join("");
-
-  const dnGlobTxt = glob.moyenne!=null?Math.round(glob.moyenne)+"%":"—";
-
-  el.innerHTML = `
-    ${theoriqueVide?`<div class="card" style="padding:14px;margin-bottom:12px;background:var(--info-bg);color:var(--info-text)">
-      <div style="font-weight:500;margin-bottom:4px">Aucun théorique configuré</div>
-      <div style="font-size:13px">Définissez le nombre de références Azura attendues par centrale pour calculer la DN.</div>
-      ${isManager?`<div style="margin-top:10px">${configBtn}</div>`:""}
-    </div>`:""}
-    <div class="metric-grid" style="margin-bottom:14px">
-      <div class="metric"><div class="metric-label">DN Azura moyenne</div><div class="metric-value" style="color:${dnColor(glob.moyenne)}">${dnGlobTxt}</div><div class="metric-sub">${glob.n} magasin${glob.n>1?"s":""} évalué${glob.n>1?"s":""}</div></div>
-      <div class="metric"><div class="metric-label">Réfs présentes</div><div class="metric-value">${glob.presentTot}<span style="font-size:14px;font-weight:400">/${glob.cibleTot}</span></div><div class="metric-sub">sur dernier relevé</div></div>
-    </div>
-    ${(!theoriqueVide&&isManager)?`<div style="margin-bottom:14px">${configBtn}</div>`:""}
-    ${ensRows?`<div class="section-label">DN par enseigne</div><div class="card" style="padding:12px">${ensRows}</div>`:""}
-    ${commSection}
-    ${detRows?`<div class="section-label">Détail par magasin (dernier relevé)</div><div class="card" style="padding:0 12px">${detRows}</div>`:(theoriqueVide?"":`<div class="empty" style="margin-top:12px"><i class="ti ti-clipboard-list"></i>Aucun relevé rattaché à une centrale avec théorique.</div>`)}
-  `;
+  el.innerHTML = `${isManager?`<div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap">${configBtn}</div>`:""}<div id="${containerId}-dn"></div>`;
+  renderDNVolet(containerId+"-dn");
 }
 
 function openDNConfig(){
