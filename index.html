@@ -1625,14 +1625,20 @@ function deleteAssortiment(id){
 let dnVoletReleves=[];
 let dnVoletLoaded=false;
 let dnVoletContainerId='dnvolet-content';
-let dnState={cat:'Azura',sub:'',subMarque:'',subFormat:'',groupBy:'enseigne',periode:''};
+let dnState={cat:'Azura',sub:'',subMarque:'',subFormat:'',groupBy:'enseigne',periode:'',commercial:''};
+let dnUserNames={};
+let dnIsManager=false;
 
 async function getDNScopeReleves(){
   const isManager=currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin');
+  dnIsManager=!!isManager;
+  dnUserNames={};
+  if(currentUser&&currentProfile)dnUserNames[currentUser.id]=((currentProfile.prenom||'')+' '+(currentProfile.nom||'')).trim()||'Moi';
   let scope=releves.slice();
   if(isManager){
     try{
-      const{data:tp}=await sb.from('profiles').select('id').eq('manager_id',currentUser.id);
+      const{data:tp}=await sb.from('profiles').select('id,prenom,nom').eq('manager_id',currentUser.id);
+      (tp||[]).forEach(p=>{dnUserNames[p.id]=((p.prenom||'')+' '+(p.nom||'')).trim()||'—';});
       const ids=[currentUser.id].concat((tp||[]).map(p=>p.id));
       const{data:tr}=await sb.from('releves').select('*').in('user_id',ids);
       if(tr&&tr.length)scope=tr;
@@ -1714,13 +1720,15 @@ function dnSetSubMarque(v){dnState.subMarque=v;dnState.subFormat='';drawDNVolet(
 function dnSetSubFormat(v){dnState.subFormat=v;drawDNVolet();}
 function dnSetGroupBy(v){dnState.groupBy=v;drawDNVolet();}
 function dnSetPeriode(v){dnState.periode=v;drawDNVolet();}
+function dnSetCommercial(v){dnState.commercial=v;drawDNVolet();}
 
 function drawDNVolet(){
   const el=document.getElementById(dnVoletContainerId);
   if(!el)return;
   const cat=dnState.cat;
   const periodeList=dnReleveMois(dnVoletReleves);
-  const scoped=dnState.periode?dnVoletReleves.filter(r=>{const p=String(r.date||'').split('/');return p.length===3&&(p[2]+'-'+p[1])===dnState.periode;}):dnVoletReleves;
+  let scoped=dnState.periode?dnVoletReleves.filter(r=>{const p=String(r.date||'').split('/');return p.length===3&&(p[2]+'-'+p[1])===dnState.periode;}):dnVoletReleves;
+  if(dnState.commercial)scoped=scoped.filter(r=>(r.user_id||'')===dnState.commercial);
 
   // Sous-sélecteur
   let subHtml='';
@@ -1753,15 +1761,19 @@ function drawDNVolet(){
   const serie=dnByMonth(dnVoletReleves,pred);
 
   // Vue croisée
-  const keys=[...new Set(scoped.map(r=>dnState.groupBy==='enseigne'?normEnseigne(r.enseigne):centraleKeyReleve(r)).filter(Boolean))].sort();
+  const keyOf=r=>dnState.groupBy==='enseigne'?normEnseigne(r.enseigne):(dnState.groupBy==='centrale'?centraleKeyReleve(r):(r.user_id||''));
+  const labelOf=k=>dnState.groupBy==='commercial'?(dnUserNames[k]||'—'):k;
+  const keys=[...new Set(scoped.map(keyOf).filter(Boolean))].sort((a,b)=>String(labelOf(a)).localeCompare(String(labelOf(b))));
   const crossRows=keys.map(k=>{
-    const sub=scoped.filter(r=>(dnState.groupBy==='enseigne'?normEnseigne(r.enseigne):centraleKeyReleve(r))===k);
+    const sub=scoped.filter(r=>keyOf(r)===k);
     const a=dnCompute(sub,dnSelPredicate('Azura',{sub:''})).dn;
     const m=dnCompute(sub,dnSelPredicate('MDD',{sub:''})).dn;
     const c=dnCompute(sub,dnSelPredicate('Concurrent',{subMarque:'',subFormat:''})).dn;
     const f=v=>v==null?'—':v.toFixed(0)+' %';
-    return `<tr style="border-top:0.5px solid var(--border)"><td style="padding:7px 4px">${k}</td><td style="text-align:right;padding:7px 4px;font-weight:600">${f(a)}</td><td style="text-align:right;padding:7px 4px">${f(m)}</td><td style="text-align:right;padding:7px 4px">${f(c)}</td></tr>`;
+    return `<tr style="border-top:0.5px solid var(--border)"><td style="padding:7px 4px">${labelOf(k)}</td><td style="text-align:right;padding:7px 4px;font-weight:600">${f(a)}</td><td style="text-align:right;padding:7px 4px">${f(m)}</td><td style="text-align:right;padding:7px 4px">${f(c)}</td></tr>`;
   }).join('');
+  const groupLabel=dnState.groupBy==='enseigne'?'enseigne':(dnState.groupBy==='centrale'?'centrale':'commercial');
+  const groupHead=dnState.groupBy==='enseigne'?'Enseigne':(dnState.groupBy==='centrale'?'Centrale':'Commercial');
 
   const seg=(v,lbl)=>`<button class="${dnState.cat===v?'on':''}" onclick="dnSetCat('${v}')">${lbl}</button>`;
   el.innerHTML=`
@@ -1780,16 +1792,17 @@ function drawDNVolet(){
       </div>
     </div>
     <div style="margin-bottom:10px"><select onchange="dnSetPeriode(this.value)"><option value="">Toutes périodes</option>${periodeList.map(ym=>`<option value="${ym}"${dnState.periode===ym?' selected':''}>${moisLabel(ym)}</option>`).join('')}</select></div>
+    ${dnIsManager?`<div style="margin-bottom:10px"><select onchange="dnSetCommercial(this.value)"><option value="">Tous les commerciaux</option>${Object.keys(dnUserNames).sort((a,b)=>dnUserNames[a].localeCompare(dnUserNames[b])).map(uid=>`<option value="${uid}"${dnState.commercial===uid?' selected':''}>${dnUserNames[uid]}</option>`).join('')}</select></div>`:''}
     <div style="margin:4px 0 6px;padding:12px 8px 8px;border:0.5px solid var(--border);border-radius:12px">
       <div style="font-size:12px;color:var(--text2);font-weight:500;padding:0 8px 6px">Évolution de la DN (%)</div>
       ${dnChartSVG(serie)}
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px">
-      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">DN par ${dnState.groupBy==='enseigne'?'enseigne':'centrale'}</div>
-      <div class="dnseg" style="width:180px"><button class="${dnState.groupBy==='enseigne'?'on':''}" style="font-size:11px;padding:5px" onclick="dnSetGroupBy('enseigne')">Enseigne</button><button class="${dnState.groupBy==='centrale'?'on':''}" style="font-size:11px;padding:5px" onclick="dnSetGroupBy('centrale')">Centrale</button></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 8px;gap:8px;flex-wrap:wrap">
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">DN par ${groupLabel}</div>
+      <div class="dnseg" style="width:${dnIsManager?'260':'180'}px"><button class="${dnState.groupBy==='enseigne'?'on':''}" style="font-size:11px;padding:5px" onclick="dnSetGroupBy('enseigne')">Enseigne</button><button class="${dnState.groupBy==='centrale'?'on':''}" style="font-size:11px;padding:5px" onclick="dnSetGroupBy('centrale')">Centrale</button>${dnIsManager?`<button class="${dnState.groupBy==='commercial'?'on':''}" style="font-size:11px;padding:5px" onclick="dnSetGroupBy('commercial')">Commercial</button>`:''}</div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="color:var(--text3);font-size:11px"><th style="text-align:left;padding:6px 4px;font-weight:500">${dnState.groupBy==='enseigne'?'Enseigne':'Centrale'}</th><th style="text-align:right;padding:6px 4px;font-weight:500">Azura</th><th style="text-align:right;padding:6px 4px;font-weight:500">MDD</th><th style="text-align:right;padding:6px 4px;font-weight:500">Conc.</th></tr></thead>
+      <thead><tr style="color:var(--text3);font-size:11px"><th style="text-align:left;padding:6px 4px;font-weight:500">${groupHead}</th><th style="text-align:right;padding:6px 4px;font-weight:500">Azura</th><th style="text-align:right;padding:6px 4px;font-weight:500">MDD</th><th style="text-align:right;padding:6px 4px;font-weight:500">Conc.</th></tr></thead>
       <tbody>${crossRows||'<tr><td colspan="4" style="padding:12px 4px;color:var(--text3)">Aucune donnée (vérifie que les assortiments ont des références).</td></tr>'}</tbody>
     </table>`;
 }
