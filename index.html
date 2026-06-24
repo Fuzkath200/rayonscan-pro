@@ -3987,7 +3987,7 @@ function loadPhoningCache(){
   if(currentUser)phoning=phoning.filter(p=>!p.user_id||p.user_id===currentUser.id);
 }
 function savePhoningCache(){localStorage.setItem('rsp_phoning',JSON.stringify(phoning));}
-function phoningRowDb(p){return {id:p.id,user_id:currentUser?currentUser.id:null,date:p.date||null,prospect:p.prospect||null,statut:p.statut||null,note:p.note||null,heure:p.heure||null,duree:(p.duree!=null?p.duree:null)};}
+function phoningRowDb(p){return {id:p.id,user_id:currentUser?currentUser.id:null,date:p.date||null,prospect:p.prospect||null,statut:p.statut||null,note:p.note||null,heure:p.heure||null,duree:(p.duree!=null?p.duree:null),rdv_date:p.rdv_date||null};}
 
 async function syncPhoning(){
   phoningSynced=true;
@@ -3999,7 +3999,7 @@ async function syncPhoning(){
     const remoteIds=new Set(remote.map(r=>r.id));
     const localOnly=phoning.filter(p=>!remoteIds.has(p.id));
     if(localOnly.length){await sb.from('phoning').upsert(localOnly.map(phoningRowDb));}
-    phoning=remote.map(r=>({id:r.id,user_id:r.user_id,date:r.date,prospect:r.prospect,statut:r.statut,note:r.note,heure:r.heure,duree:r.duree})).concat(localOnly);
+    phoning=remote.map(r=>({id:r.id,user_id:r.user_id,date:r.date,prospect:r.prospect,statut:r.statut,note:r.note,heure:r.heure,duree:r.duree,rdv_date:r.rdv_date})).concat(localOnly);
     savePhoningCache();
     if(document.getElementById(phoningContainerId))drawPhoning();
   }catch(e){/* hors-ligne ou table absente : on garde le cache local */}
@@ -4016,7 +4016,7 @@ async function loadPhoningTeam(){
     (tp||[]).forEach(p=>{names[p.id]=((p.prenom||'')+' '+(p.nom||'')).trim()||'—';});
     const ids=[currentUser.id].concat((tp||[]).map(p=>p.id));
     const{data:tr}=await sb.from('phoning').select('*').in('user_id',ids);
-    rows=(tr||[]).map(r=>({id:r.id,user_id:r.user_id,date:r.date,prospect:r.prospect,statut:r.statut,note:r.note,heure:r.heure,duree:r.duree}));
+    rows=(tr||[]).map(r=>({id:r.id,user_id:r.user_id,date:r.date,prospect:r.prospect,statut:r.statut,note:r.note,heure:r.heure,duree:r.duree,rdv_date:r.rdv_date}));
   }catch(e){}
   phoningTeam={rows,names};
 }
@@ -4139,7 +4139,7 @@ function drawPhoning(){
   if(editable){
     form=`<div class="ph-card" style="flex:0 0 312px;min-width:282px">
       <div class="ph-card-head"><span class="ph-ic"><i class="ti ti-phone-plus"></i></span><h3>Nouvel appel</h3></div>
-      <div class="ph-field"><label>Date de l'appel</label><input type="date" id="ph-date" value="${phoningTodayIso()}"></div>
+      <div class="ph-field"><label>Date de l'appel</label><input type="date" id="ph-date" value="${phoningTodayIso()}" onchange="phoningSyncRdvDate()"></div>
       <div class="ph-field ph-ac"><label>Client</label>
         <input id="ph-prospect" placeholder="Tapez le nom ou la ville…" autocomplete="off" oninput="phoningFilterClients(this.value)" onfocus="phoningFilterClients(this.value)">
         <div class="ph-ac-dd" id="ph-client-dropdown"></div>
@@ -4148,6 +4148,7 @@ function drawPhoning(){
         <select id="ph-statut" onchange="phoningToggleRdv()">${PHONING_STATUTS.map(s=>`<option>${s}</option>`).join('')}</select></div>
       <div class="ph-rdv-panel" id="ph-rdv-fields">
         <div class="ph-rdv-title"><i class="ti ti-calendar-event"></i> Détails du rendez-vous</div>
+        <div class="ph-field"><label>Date du RDV</label><input type="date" id="ph-rdv-date" value="${phoningTodayIso()}"></div>
         <div class="ph-rdv-grid">
           <div class="ph-field"><label>Heure</label><input type="time" id="ph-heure" value="09:00"></div>
           <div class="ph-field"><label>Durée</label><select id="ph-duree">${AGENDA_DUREES.map(d=>`<option value="${d.v}"${d.v===60?' selected':''}>${d.l}</option>`).join('')}</select></div>
@@ -4165,7 +4166,7 @@ function drawPhoning(){
       ${showCommercial?`<td>${names[p.user_id]||'—'}</td>`:''}
       <td style="font-weight:500">${p.prospect||'—'}</td>
       <td>${phoningStatutBadge(p.statut)}</td>
-      <td style="white-space:nowrap;color:var(--text2)">${p.heure?(p.heure+(p.duree?' · '+phoningDureeLabel(p.duree):'')):'—'}</td>
+      <td style="white-space:nowrap;color:var(--text2)">${(p.rdv_date||p.heure)?[p.rdv_date,p.heure,p.duree?phoningDureeLabel(p.duree):''].filter(Boolean).join(' · '):'—'}</td>
       <td style="color:var(--text2)">${p.note||''}</td>
       ${editable?`<td style="text-align:right"><button class="icon-btn danger" onclick="phoningDelete('${p.id}')" title="Supprimer"><i class="ti ti-trash"></i></button></td>`:''}
     </tr>`).join(''):`<tr><td colspan="7" style="padding:30px;text-align:center;color:var(--text3);font-style:italic">Aucun appel cette semaine. Saisis ton premier appel pour démarrer.</td></tr>`;
@@ -4197,15 +4198,16 @@ function phoningAdd(){
   const prospect=(document.getElementById('ph-prospect').value||'').trim();
   const statut=document.getElementById('ph-statut').value;
   const note=(document.getElementById('ph-note').value||'').trim();
-  let heure=null,duree=null;
+  let heure=null,duree=null,rdv_date=null;
   if(statut==='Rendez-vous pris'){
-    const hEl=document.getElementById('ph-heure'), duEl=document.getElementById('ph-duree');
+    const hEl=document.getElementById('ph-heure'), duEl=document.getElementById('ph-duree'), rdEl=document.getElementById('ph-rdv-date');
     heure=hEl&&hEl.value?hEl.value:null;
     duree=duEl&&duEl.value?parseInt(duEl.value,10):null;
+    if(rdEl&&rdEl.value){const a=rdEl.value.split('-');if(a.length===3)rdv_date=a[2]+'/'+a[1]+'/'+a[0];}
   }
   if(!date){alert('Indique la date de l\'appel.');return;}
   if(!prospect){alert('Indique le client.');return;}
-  const p={id:'ph'+Date.now()+Math.random().toString(36).slice(2,7),user_id:currentUser?currentUser.id:null,date,prospect,statut,note,heure,duree};
+  const p={id:'ph'+Date.now()+Math.random().toString(36).slice(2,7),user_id:currentUser?currentUser.id:null,date,prospect,statut,note,heure,duree,rdv_date};
   phoning.unshift(p);
   savePhoningCache();
   enqueueSync('phoning','upsert',phoningRowDb(p),p.id);
@@ -4214,6 +4216,10 @@ function phoningAdd(){
 function phoningToggleRdv(){
   const st=document.getElementById('ph-statut'), box=document.getElementById('ph-rdv-fields');
   if(st&&box)box.style.display=(st.value==='Rendez-vous pris')?'block':'none';
+}
+function phoningSyncRdvDate(){
+  const d=document.getElementById('ph-date'), r=document.getElementById('ph-rdv-date');
+  if(d&&r&&d.value)r.value=d.value;
 }
 function phoningFilterClients(val){
   const dd=document.getElementById('ph-client-dropdown');
@@ -4251,7 +4257,7 @@ function phoningExport(){
   else scope=((phoningTeam&&phoningTeam.rows)||[]).filter(r=>r.user_id===phoningView);
   const data=scope.slice().sort((a,b)=>{const da=phoningFrToDate(a.date),db=phoningFrToDate(b.date);return (db?db.getTime():0)-(da?da.getTime():0);}).map(p=>{
     const mf=phoningMonF(p.date);
-    const row={Date:p.date||'',Client:p.prospect||'',Statut:p.statut||'',Heure:p.heure||'','Durée':p.duree?phoningDureeLabel(p.duree):'',Commentaires:p.note||'',Semaine:mf?(mf.mon+' au '+mf.fri):''};
+    const row={Date:p.date||'',Client:p.prospect||'',Statut:p.statut||'','Date RDV':p.rdv_date||'',Heure:p.heure||'','Durée':p.duree?phoningDureeLabel(p.duree):'',Commentaires:p.note||'',Semaine:mf?(mf.mon+' au '+mf.fri):''};
     if(isManager&&phoningView==='equipe')row.Commercial=names[p.user_id]||'';
     return row;
   });
