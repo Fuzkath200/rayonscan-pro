@@ -255,6 +255,9 @@ canvas{display:block;margin:0 auto}
     <button class="sidebar-nav-item" id="snav-synthese" onclick="desktopTab('synthese')">
       <i class="ti ti-currency-euro"></i> Synthèse PA
     </button>
+    <button class="sidebar-nav-item" id="snav-phoning" onclick="desktopTab('phoning')">
+      <i class="ti ti-phone-call"></i> Phoning
+    </button>
     <button class="sidebar-nav-item" id="snav-activite" onclick="desktopTab('activite')">
       <i class="ti ti-activity"></i> Activité équipe
     </button>
@@ -313,6 +316,7 @@ canvas{display:block;margin:0 auto}
     <button class="tab4" onclick="switchTab('clients',this)">Clients</button>
     <button class="tab4" onclick="switchTab('agenda',this)">Agenda</button>
     <button class="tab4" onclick="switchTab('synthese',this)">Synthèse PA</button>
+    <button class="tab4" onclick="switchTab('phoning',this)">Phoning</button>
     <button class="tab4" id="tab-btn-equipe" style="display:none" onclick="switchTab('equipe',this)">Équipe</button>
     <button class="tab4" onclick="switchTab('enseignes',this)">Enseignes</button>
     <button class="tab4" onclick="switchTab('catalogue',this)">Catalogue</button>
@@ -334,6 +338,7 @@ canvas{display:block;margin:0 auto}
   <div id="tab-clients" style="display:none"><div id="clients-content"></div></div>
   <div id="tab-agenda" style="display:none"><div id="agenda-content"></div></div>
   <div id="tab-synthese" style="display:none"><div id="synthese-content"></div></div>
+  <div id="tab-phoning" style="display:none"><div id="phoning-content"></div></div>
   <div id="tab-enseignes" style="display:none"><div id="enseignes-list"></div></div>
   <div id="tab-catalogue" style="display:none">
     <div class="filter-bar" id="catalogue-filter"></div>
@@ -573,7 +578,7 @@ function desktopTab(tab){
   const activeBtn = document.getElementById('snav-'+tab);
   if(activeBtn) activeBtn.classList.add('active');
   // Titre
-  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda', synthese:'Synthèse PA'};
+  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda', synthese:'Synthèse PA', phoning:'Phoning'};
   document.getElementById('desktop-topbar-title').textContent = titles[tab]||tab;
   document.getElementById('desktop-back-btn').style.display = 'none';
   // Rendu du contenu
@@ -602,6 +607,11 @@ function desktopTab(tab){
   if(tab==='synthese'){
     content.innerHTML = '<div id="synthese-content-desktop"></div>';
     renderSynthesePA('synthese-content-desktop');
+    return;
+  }
+  if(tab==='phoning'){
+    content.innerHTML = '<div id="phoning-content-desktop"></div>';
+    renderPhoning('phoning-content-desktop');
     return;
   }
   // Récupère le contenu de l'onglet mobile et le clone dans desktop-content
@@ -1039,7 +1049,7 @@ async function init(){
     const btn=document.getElementById('tab-btn-equipe');
     if(btn)btn.style.display='';
   }
-  renderHome();initPhotoListener();await loadDN();loadAssortimentsCache();syncAssortiments();await loadContacts();await loadJoursTerrain();if(window.innerWidth>=768)initDesktop();
+  renderHome();initPhotoListener();await loadDN();loadAssortimentsCache();syncAssortiments();await loadContacts();await loadJoursTerrain();loadPhoningCache();syncPhoning();if(window.innerWidth>=768)initDesktop();
   }catch(e){
     setSyncStatus('error','Hors ligne');
     centrales=JSON.parse(localStorage.getItem('rsp_centrales')||'null')||JSON.parse(JSON.stringify(DEFAULT_CENTRALES));
@@ -1118,7 +1128,7 @@ function showScreen(id){
 function switchTab(tab,btn){
   document.querySelectorAll('.tab4').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients','activite','agenda','synthese'].forEach(t=>{
+  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients','activite','agenda','synthese','phoning'].forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el)el.style.display=t===tab?'block':'none';
   });
@@ -1131,6 +1141,7 @@ function switchTab(tab,btn){
   if(tab==='activite')renderActivite('activite-content');
   if(tab==='agenda')renderAgenda('agenda-content');
   if(tab==='synthese')renderSynthesePA('synthese-content');
+  if(tab==='phoning')renderPhoning('phoning-content');
 }
 
 // ===== AGENDA =====
@@ -3903,6 +3914,275 @@ async function exportPDF(){
     y=vy+4;
   }
   doc.save('releve_'+currentReleve.enseigne+'_'+currentReleve.magasin+'_'+currentReleve.date.replace(/\//g,'-')+'.pdf');
+}
+
+// ===== PHONING (suivi d'appels & conversion) =====
+let phoning=[];                  // appels de l'utilisateur courant (cache local + sync)
+let phoningSynced=false;
+let phoningTeam=null;            // {rows, names} chargé pour le manager (lecture équipe)
+let phoningContainerId='phoning-content';
+let phoningView='moi';           // 'moi' | <userId> | 'equipe'
+let phoningWeek='';              // clé semaine ISO sélectionnée ('' = semaine en cours)
+let phoningMonth='';             // 'mm/aaaa' ('' = mois en cours)
+const PHONING_STATUTS=['Rendez-vous pris','À rappeler','Refus','Injoignable','Non qualifié'];
+const PHONING_OBJ_APPELS=10;
+const PHONING_OBJ_RDV=3;         // 30% de 10
+const PHONING_STATUT_COLORS={
+  'Rendez-vous pris':{bg:'var(--success-bg)',txt:'var(--success-text)'},
+  'À rappeler':{bg:'var(--warn-bg)',txt:'var(--warn-text)'},
+  'Refus':{bg:'var(--danger-bg)',txt:'var(--danger-text)'},
+  'Injoignable':{bg:'var(--bg3)',txt:'var(--text2)'},
+  'Non qualifié':{bg:'var(--info-bg)',txt:'var(--info-text)'}
+};
+
+function loadPhoningCache(){
+  try{phoning=JSON.parse(localStorage.getItem('rsp_phoning')||'[]');}catch(e){phoning=[];}
+  if(!Array.isArray(phoning))phoning=[];
+  if(currentUser)phoning=phoning.filter(p=>!p.user_id||p.user_id===currentUser.id);
+}
+function savePhoningCache(){localStorage.setItem('rsp_phoning',JSON.stringify(phoning));}
+function phoningRowDb(p){return {id:p.id,user_id:currentUser?currentUser.id:null,date:p.date||null,prospect:p.prospect||null,statut:p.statut||null,note:p.note||null};}
+
+async function syncPhoning(){
+  phoningSynced=true;
+  if(!currentUser||typeof sb==='undefined'||!sb)return;
+  try{
+    const{data,error}=await sb.from('phoning').select('*').eq('user_id',currentUser.id);
+    if(error)throw error;
+    const remote=data||[];
+    const remoteIds=new Set(remote.map(r=>r.id));
+    const localOnly=phoning.filter(p=>!remoteIds.has(p.id));
+    if(localOnly.length){await sb.from('phoning').upsert(localOnly.map(phoningRowDb));}
+    phoning=remote.map(r=>({id:r.id,user_id:r.user_id,date:r.date,prospect:r.prospect,statut:r.statut,note:r.note})).concat(localOnly);
+    savePhoningCache();
+    if(document.getElementById(phoningContainerId))drawPhoning();
+  }catch(e){/* hors-ligne ou table absente : on garde le cache local */}
+}
+
+async function loadPhoningTeam(){
+  const isManager=currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin');
+  if(!isManager||typeof sb==='undefined'||!sb){phoningTeam=null;return;}
+  const names={};
+  if(currentUser&&currentProfile)names[currentUser.id]=((currentProfile.prenom||'')+' '+(currentProfile.nom||'')).trim()||'Moi';
+  let rows=[];
+  try{
+    const{data:tp}=await sb.from('profiles').select('id,prenom,nom').eq('manager_id',currentUser.id);
+    (tp||[]).forEach(p=>{names[p.id]=((p.prenom||'')+' '+(p.nom||'')).trim()||'—';});
+    const ids=[currentUser.id].concat((tp||[]).map(p=>p.id));
+    const{data:tr}=await sb.from('phoning').select('*').in('user_id',ids);
+    rows=(tr||[]).map(r=>({id:r.id,user_id:r.user_id,date:r.date,prospect:r.prospect,statut:r.statut,note:r.note}));
+  }catch(e){}
+  phoningTeam={rows,names};
+}
+
+async function renderPhoning(containerId){
+  phoningContainerId=containerId||'phoning-content';
+  const el=document.getElementById(phoningContainerId);
+  if(!el)return;
+  if(!phoningSynced){
+    el.innerHTML='<div class="empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>Chargement…</div>';
+    await syncPhoning();
+  }
+  const isManager=currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin');
+  if(isManager&&!phoningTeam)await loadPhoningTeam();
+  drawPhoning();
+}
+
+// --- helpers dates phoning ---
+function phoningTodayFr(){const d=new Date();return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
+function phoningTodayIso(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function phoningMonthNow(){const d=new Date();return String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
+function phoningFrToDate(s){const p=String(s||'').split('/');if(p.length!==3)return null;const d=new Date(+p[2],+p[1]-1,+p[0]);return isNaN(d.getTime())?null:d;}
+function phoningFmtFr(d){return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
+function phoningMonF(dateStr){const d=phoningFrToDate(dateStr);if(!d)return null;const dow=(d.getDay()+6)%7;const mon=new Date(d);mon.setDate(d.getDate()-dow);const fri=new Date(mon);fri.setDate(mon.getDate()+4);return{mon:phoningFmtFr(mon),fri:phoningFmtFr(fri)};}
+function phoningMonthKey(dateStr){const p=String(dateStr||'').split('/');return p.length===3?p[1]+'/'+p[2]:null;}
+function phoningMonthLabel(mk){const M=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];const p=mk.split('/');return (M[(+p[0])-1]||p[0])+' '+p[1];}
+function phoningRdv(rows){return rows.filter(r=>r.statut==='Rendez-vous pris').length;}
+
+function phoningWeeksOf(scope){
+  const map={};
+  scope.forEach(p=>{const k=isoWeekKey(p.date);if(k&&!map[k])map[k]=p.date;});
+  const cur=isoWeekKey(phoningTodayFr());
+  if(cur&&!map[cur])map[cur]=phoningTodayFr();
+  return Object.keys(map).sort().reverse().map(k=>{const mf=phoningMonF(map[k]);return{key:k,label:mf?(mf.mon+' au '+mf.fri):k,cur:k===cur};});
+}
+function phoningMonthsOf(scope){
+  const set={};
+  scope.forEach(p=>{const k=phoningMonthKey(p.date);if(k)set[k]=true;});
+  set[phoningMonthNow()]=true;
+  return Object.keys(set).sort((a,b)=>{const A=a.split('/'),B=b.split('/');return (B[1]-A[1])||(B[0]-A[0]);});
+}
+
+function phoningBar(label,val,target){
+  const pct=target?Math.min(100,val/target*100):0;
+  const ok=val>=target;
+  const col=ok?'var(--success-text)':(pct>=60?'var(--warn-text)':'var(--accent)');
+  return `<div style="margin-top:7px">
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:3px"><span>${label}</span><span style="font-weight:700;color:${col}">${val}/${target}${ok?' ✓':''}</span></div>
+    <div style="height:8px;background:var(--bg2);border-radius:6px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(0)}%;background:${col};border-radius:6px;transition:width .3s"></div></div>
+  </div>`;
+}
+function phoningStatutBadge(s){
+  const c=PHONING_STATUT_COLORS[s]||{bg:'var(--bg3)',txt:'var(--text2)'};
+  return `<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;background:${c.bg};color:${c.txt};white-space:nowrap">${s||'—'}</span>`;
+}
+
+function drawPhoning(){
+  const el=document.getElementById(phoningContainerId);
+  if(!el)return;
+  const isManager=currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin');
+  const myId=currentUser&&currentUser.id;
+  const names=(phoningTeam&&phoningTeam.names)||{};
+
+  // périmètre + droit d'édition
+  let scope, editable=false, showCommercial=false;
+  if(!isManager||phoningView==='moi'){ scope=phoning; editable=true; }
+  else if(phoningView==='equipe'){ scope=(phoningTeam&&phoningTeam.rows)||[]; showCommercial=true; }
+  else { scope=((phoningTeam&&phoningTeam.rows)||[]).filter(r=>r.user_id===phoningView); }
+
+  const curWeek=isoWeekKey(phoningTodayFr());
+  const selWeek=phoningWeek||curWeek;
+  const weekRows=scope.filter(r=>isoWeekKey(r.date)===selWeek);
+  const selMonth=phoningMonth||phoningMonthNow();
+  const monthRows=scope.filter(r=>phoningMonthKey(r.date)===selMonth);
+
+  const totalAppels=scope.length, totalRdv=phoningRdv(scope), tauxGlobal=totalAppels?Math.round(totalRdv/totalAppels*100):0;
+  const wkAppels=weekRows.length, wkRdv=phoningRdv(weekRows), tauxSem=wkAppels?Math.round(wkRdv/wkAppels*100):0;
+  const moAppels=monthRows.length, moRdv=phoningRdv(monthRows), tauxMois=moAppels?Math.round(moRdv/moAppels*100):0;
+
+  const weeks=phoningWeeksOf(scope), months=phoningMonthsOf(scope);
+  const weekSel=`<select onchange="phoningSetWeek(this.value)" style="padding:7px 9px;font-size:13px;border:0.5px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text)">`+
+    weeks.map(w=>`<option value="${w.key}" ${w.key===selWeek?'selected':''}>${w.label}${w.cur?' (en cours)':''}</option>`).join('')+`</select>`;
+  let commSel='';
+  if(isManager){
+    const opts=[`<option value="moi" ${phoningView==='moi'?'selected':''}>Moi</option>`]
+      .concat(Object.keys(names).filter(id=>id!==myId).map(id=>`<option value="${id}" ${phoningView===id?'selected':''}>${names[id]}</option>`))
+      .concat([`<option value="equipe" ${phoningView==='equipe'?'selected':''}>Toute l'équipe</option>`]).join('');
+    commSel=`<div style="display:flex;flex-direction:column;gap:3px;min-width:160px">
+      <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Commercial</label>
+      <select onchange="phoningSetView(this.value)" style="padding:7px 9px;font-size:13px;border:0.5px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text)">${opts}</select></div>`;
+  }
+
+  const kpi=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:10px;margin-bottom:18px">
+      <div class="metric" style="border-left:3px solid var(--info-text)">
+        <div class="metric-label">Total appels</div><div class="metric-value">${totalAppels}</div>
+        <div class="metric-sub">Volume total historique</div>
+      </div>
+      <div class="metric" style="border-left:3px solid var(--success-text)">
+        <div class="metric-label">Total RDV pris</div><div class="metric-value">${totalRdv}</div>
+        <div class="metric-sub">Taux global : ${tauxGlobal}%</div>
+      </div>
+      <div class="metric" style="border-left:3px solid var(--accent)">
+        <div class="metric-label">Objectif semaine</div>
+        ${phoningBar('Appels',wkAppels,PHONING_OBJ_APPELS)}
+        ${phoningBar('RDV',wkRdv,PHONING_OBJ_RDV)}
+      </div>
+      <div class="metric" style="border-left:3px solid var(--warn-text)">
+        <div class="metric-label">Taux RDV semaine</div><div class="metric-value">${tauxSem}%</div>
+        <div class="metric-sub">${wkRdv} RDV / ${wkAppels} appels</div>
+      </div>
+      <div class="metric" style="border-left:3px solid #6B5FD4">
+        <div class="metric-label" style="margin-bottom:6px">Taux RDV mois</div>
+        <select onchange="phoningSetMonth(this.value)" style="width:100%;padding:5px 7px;font-size:12px;border:0.5px solid var(--border2);border-radius:7px;background:var(--bg);color:var(--text);margin-bottom:6px">
+          ${months.map(m=>`<option value="${m}" ${m===selMonth?'selected':''}>${phoningMonthLabel(m)}</option>`).join('')}
+        </select>
+        <div class="metric-value">${tauxMois}%</div><div class="metric-sub">${moRdv} RDV / ${moAppels} appels</div>
+      </div>
+    </div>`;
+
+  let form='';
+  if(editable){
+    form=`<div class="card card-inner" style="flex:0 0 300px;min-width:280px">
+      <div class="section-label" style="margin-top:0">Saisie d'un appel</div>
+      <div class="form-group"><label>Date de l'appel</label><input type="date" id="ph-date" value="${phoningTodayIso()}"></div>
+      <div class="form-group"><label>Entreprise / Prospect</label><input id="ph-prospect" placeholder="Ex. ABC Corp ou M. Dupont"></div>
+      <div class="form-group"><label>Résultat de l'appel</label>
+        <select id="ph-statut">${PHONING_STATUTS.map(s=>`<option>${s}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Commentaires / Notes</label><textarea id="ph-note" rows="3" placeholder="Détails du projet, heure de rappel…"></textarea></div>
+      <button class="btn btn-primary" onclick="phoningAdd()"><i class="ti ti-plus"></i> Enregistrer l'appel</button>
+    </div>`;
+  }
+
+  const sorted=weekRows.slice().sort((a,b)=>{const da=phoningFrToDate(a.date),db=phoningFrToDate(b.date);return (db?db.getTime():0)-(da?da.getTime():0);});
+  const cols=`<th style="text-align:left;padding:0 8px 8px">Date</th>${showCommercial?'<th style="text-align:left;padding:0 8px 8px">Commercial</th>':''}<th style="text-align:left;padding:0 8px 8px">Prospect</th><th style="text-align:left;padding:0 8px 8px">Statut</th><th style="text-align:left;padding:0 8px 8px">Commentaires</th>${editable?'<th style="padding:0 8px 8px"></th>':''}`;
+  const body=sorted.length?sorted.map(p=>`<tr style="border-bottom:0.5px solid var(--border)">
+      <td style="padding:9px 8px;white-space:nowrap">${p.date||'—'}</td>
+      ${showCommercial?`<td style="padding:9px 8px">${names[p.user_id]||'—'}</td>`:''}
+      <td style="padding:9px 8px">${p.prospect||'—'}</td>
+      <td style="padding:9px 8px">${phoningStatutBadge(p.statut)}</td>
+      <td style="padding:9px 8px;color:var(--text2)">${p.note||''}</td>
+      ${editable?`<td style="padding:9px 8px;text-align:right"><button class="icon-btn danger" onclick="phoningDelete('${p.id}')" title="Supprimer"><i class="ti ti-trash"></i></button></td>`:''}
+    </tr>`).join(''):`<tr><td colspan="6" style="padding:26px;text-align:center;color:var(--text3);font-style:italic">Aucun appel enregistré pour cette semaine.</td></tr>`;
+
+  const hist=`<div class="card" style="flex:1;min-width:300px;padding:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="font-size:15px;font-weight:600">Historique des appels</div>
+      <button class="btn-sm" onclick="phoningExport()" style="background:var(--bg3);border:0.5px solid var(--border);color:var(--text)"><i class="ti ti-download"></i> Exporter</button>
+    </div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);font-size:11px;text-transform:uppercase;letter-spacing:0.03em">${cols}</tr></thead>
+      <tbody>${body}</tbody></table></div>
+  </div>`;
+
+  el.innerHTML=`
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
+      ${commSel}
+      <div style="display:flex;flex-direction:column;gap:3px;min-width:200px;flex:1">
+        <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Semaine (lundi → vendredi)</label>
+        ${weekSel}
+      </div>
+    </div>
+    ${kpi}
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">${form}${hist}</div>`;
+}
+
+function phoningAdd(){
+  const isManager=currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin');
+  if(isManager&&phoningView!=='moi')return; // on ne saisit que son propre phoning
+  const dEl=document.getElementById('ph-date');
+  let date='';
+  if(dEl&&dEl.value){const a=dEl.value.split('-');if(a.length===3)date=a[2]+'/'+a[1]+'/'+a[0];}
+  const prospect=(document.getElementById('ph-prospect').value||'').trim();
+  const statut=document.getElementById('ph-statut').value;
+  const note=(document.getElementById('ph-note').value||'').trim();
+  if(!date){alert('Indique la date de l\'appel.');return;}
+  if(!prospect){alert('Indique le nom du prospect.');return;}
+  const p={id:'ph'+Date.now()+Math.random().toString(36).slice(2,7),user_id:currentUser?currentUser.id:null,date,prospect,statut,note};
+  phoning.unshift(p);
+  savePhoningCache();
+  enqueueSync('phoning','upsert',phoningRowDb(p),p.id);
+  drawPhoning();
+}
+function phoningDelete(id){
+  if(!confirm('Supprimer cet appel ?'))return;
+  phoning=phoning.filter(p=>p.id!==id);
+  savePhoningCache();
+  enqueueSync('phoning','delete',null,id);
+  drawPhoning();
+}
+function phoningSetView(v){phoningView=v;phoningWeek='';phoningMonth='';drawPhoning();}
+function phoningSetWeek(v){phoningWeek=v;drawPhoning();}
+function phoningSetMonth(v){phoningMonth=v;drawPhoning();}
+
+function phoningExport(){
+  if(typeof XLSX==='undefined'){alert('Export indisponible.');return;}
+  const isManager=currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin');
+  const names=(phoningTeam&&phoningTeam.names)||{};
+  let scope;
+  if(!isManager||phoningView==='moi')scope=phoning;
+  else if(phoningView==='equipe')scope=(phoningTeam&&phoningTeam.rows)||[];
+  else scope=((phoningTeam&&phoningTeam.rows)||[]).filter(r=>r.user_id===phoningView);
+  const data=scope.slice().sort((a,b)=>{const da=phoningFrToDate(a.date),db=phoningFrToDate(b.date);return (db?db.getTime():0)-(da?da.getTime():0);}).map(p=>{
+    const mf=phoningMonF(p.date);
+    const row={Date:p.date||'',Prospect:p.prospect||'',Statut:p.statut||'',Commentaires:p.note||'',Semaine:mf?(mf.mon+' au '+mf.fri):''};
+    if(isManager&&phoningView==='equipe')row.Commercial=names[p.user_id]||'';
+    return row;
+  });
+  const ws=XLSX.utils.json_to_sheet(data);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Phoning');
+  XLSX.writeFile(wb,'phoning_'+phoningTodayFr().replace(/\//g,'-')+'.xlsx');
 }
 
 // INIT
