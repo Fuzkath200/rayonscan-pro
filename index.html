@@ -227,6 +227,52 @@ canvas{display:block;margin:0 auto}
   /* Résultats en 2 colonnes */
   #screen-results .card{max-width:100%}
 }
+
+/* ===================== PHONING (styles isolés) ===================== */
+.ph-card{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:18px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+.ph-card-head{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.ph-card-head h3{font-size:15px;font-weight:600;margin:0;color:var(--text)}
+.ph-ic{width:34px;height:34px;border-radius:9px;background:rgba(29,158,117,0.12);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.ph-field{margin-bottom:13px}
+.ph-field>label{display:block;font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:5px}
+.ph-field input,.ph-field select,.ph-field textarea{width:100%;padding:9px 11px;font-size:14px;border:1px solid var(--border2);border-radius:9px;background:var(--bg);color:var(--text);font-family:inherit;transition:border-color .15s,box-shadow .15s;box-sizing:border-box}
+.ph-field input:focus,.ph-field select:focus,.ph-field textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(29,158,117,0.15)}
+.ph-field textarea{resize:vertical;min-height:64px}
+.ph-rdv-panel{background:var(--bg3);border-radius:var(--radius);padding:11px 12px;margin-bottom:13px}
+.ph-rdv-title{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:9px}
+.ph-rdv-title i{font-size:12px}
+.ph-rdv-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ph-rdv-grid .ph-field{margin-bottom:0}
+.ph-ac{position:relative}
+.ph-ac-dd{display:none;position:absolute;top:100%;left:0;right:0;z-index:50;margin-top:4px;background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius);max-height:220px;overflow-y:auto;box-shadow:0 6px 20px rgba(0,0,0,0.14)}
+.ph-ac-item{padding:9px 12px;cursor:pointer;border-bottom:0.5px solid var(--border);font-size:13px;color:var(--text)}
+.ph-ac-item:last-child{border-bottom:none}
+.ph-ac-item:hover{background:var(--bg2)}
+.ph-ac-item .sub{font-size:11px;color:var(--text3);margin-top:1px}
+.ph-submit{width:100%;margin-top:4px;padding:11px;border:none;border-radius:9px;background:var(--accent);color:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:filter .15s,transform .05s}
+.ph-submit:hover{filter:brightness(1.07)}
+.ph-submit:active{transform:scale(0.99)}
+.ph-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:11px;margin-bottom:18px}
+.ph-kpi{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;position:relative;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+.ph-kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--strip,var(--accent))}
+.ph-kpi-label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.03em;margin-bottom:6px}
+.ph-kpi-val{font-size:26px;font-weight:600;line-height:1;color:var(--text)}
+.ph-kpi-sub{font-size:11px;color:var(--text3);margin-top:5px}
+.ph-bar-row{display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:3px}
+.ph-bar-track{height:8px;background:var(--bg3);border-radius:6px;overflow:hidden}
+.ph-bar-fill{height:100%;border-radius:6px;transition:width .35s ease}
+.ph-table{width:100%;border-collapse:collapse;font-size:13px}
+.ph-table thead th{text-align:left;padding:0 10px 9px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid var(--border)}
+.ph-table tbody td{padding:10px;border-bottom:0.5px solid var(--border);vertical-align:middle;color:var(--text)}
+.ph-table tbody tr:last-child td{border-bottom:none}
+.ph-table tbody tr:hover{background:var(--bg2)}
+.ph-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+.ph-badge .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.ph-sel{padding:8px 10px;font-size:13px;border:1px solid var(--border2);border-radius:9px;background:var(--bg);color:var(--text);font-family:inherit;transition:border-color .15s,box-shadow .15s}
+.ph-sel:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(29,158,117,0.15)}
+.ph-toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px}
+.ph-tb-field{display:flex;flex-direction:column;gap:4px}
+.ph-tb-field label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em}
 </style>
 </head>
 <body>
@@ -4018,14 +4064,14 @@ function phoningBar(label,val,target){
   const pct=target?Math.min(100,val/target*100):0;
   const ok=val>=target;
   const col=ok?'var(--success-text)':(pct>=60?'var(--warn-text)':'var(--accent)');
-  return `<div style="margin-top:7px">
-    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:3px"><span>${label}</span><span style="font-weight:700;color:${col}">${val}/${target}${ok?' ✓':''}</span></div>
-    <div style="height:8px;background:var(--bg2);border-radius:6px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(0)}%;background:${col};border-radius:6px;transition:width .3s"></div></div>
+  return `<div style="margin-top:9px">
+    <div class="ph-bar-row"><span>${label}</span><span style="font-weight:700;color:${col}">${val}/${target}${ok?' ✓':''}</span></div>
+    <div class="ph-bar-track"><div class="ph-bar-fill" style="width:${pct.toFixed(0)}%;background:${col}"></div></div>
   </div>`;
 }
 function phoningStatutBadge(s){
   const c=PHONING_STATUT_COLORS[s]||{bg:'var(--bg3)',txt:'var(--text2)'};
-  return `<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;background:${c.bg};color:${c.txt};white-space:nowrap">${s||'—'}</span>`;
+  return `<span class="ph-badge" style="background:${c.bg};color:${c.txt}"><span class="dot" style="background:${c.txt}"></span>${s||'—'}</span>`;
 }
 
 function drawPhoning(){
@@ -4052,101 +4098,94 @@ function drawPhoning(){
   const moAppels=monthRows.length, moRdv=phoningRdv(monthRows), tauxMois=moAppels?Math.round(moRdv/moAppels*100):0;
 
   const weeks=phoningWeeksOf(scope), months=phoningMonthsOf(scope);
-  const weekSel=`<select onchange="phoningSetWeek(this.value)" style="padding:7px 9px;font-size:13px;border:0.5px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text)">`+
+  const weekSel=`<select class="ph-sel" onchange="phoningSetWeek(this.value)">`+
     weeks.map(w=>`<option value="${w.key}" ${w.key===selWeek?'selected':''}>${w.label}${w.cur?' (en cours)':''}</option>`).join('')+`</select>`;
   let commSel='';
   if(isManager){
     const opts=[`<option value="moi" ${phoningView==='moi'?'selected':''}>Moi</option>`]
       .concat(Object.keys(names).filter(id=>id!==myId).map(id=>`<option value="${id}" ${phoningView===id?'selected':''}>${names[id]}</option>`))
       .concat([`<option value="equipe" ${phoningView==='equipe'?'selected':''}>Toute l'équipe</option>`]).join('');
-    commSel=`<div style="display:flex;flex-direction:column;gap:3px;min-width:160px">
-      <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Commercial</label>
-      <select onchange="phoningSetView(this.value)" style="padding:7px 9px;font-size:13px;border:0.5px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text)">${opts}</select></div>`;
+    commSel=`<div class="ph-tb-field" style="min-width:160px"><label>Commercial</label><select class="ph-sel" onchange="phoningSetView(this.value)">${opts}</select></div>`;
   }
 
-  const kpi=`
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:10px;margin-bottom:18px">
-      <div class="metric" style="border-left:3px solid var(--info-text)">
-        <div class="metric-label">Total appels</div><div class="metric-value">${totalAppels}</div>
-        <div class="metric-sub">Volume total historique</div>
+  const kpi=`<div class="ph-kpi-grid">
+      <div class="ph-kpi" style="--strip:var(--info-text)">
+        <div class="ph-kpi-label">Total appels</div><div class="ph-kpi-val">${totalAppels}</div>
+        <div class="ph-kpi-sub">Volume total historique</div>
       </div>
-      <div class="metric" style="border-left:3px solid var(--success-text)">
-        <div class="metric-label">Total RDV pris</div><div class="metric-value">${totalRdv}</div>
-        <div class="metric-sub">Taux global : ${tauxGlobal}%</div>
+      <div class="ph-kpi" style="--strip:var(--success-text)">
+        <div class="ph-kpi-label">Total RDV pris</div><div class="ph-kpi-val">${totalRdv}</div>
+        <div class="ph-kpi-sub">Taux global : ${tauxGlobal}%</div>
       </div>
-      <div class="metric" style="border-left:3px solid var(--accent)">
-        <div class="metric-label">Objectif semaine</div>
+      <div class="ph-kpi" style="--strip:var(--accent)">
+        <div class="ph-kpi-label">Objectif semaine</div>
         ${phoningBar('Appels',wkAppels,PHONING_OBJ_APPELS)}
         ${phoningBar('RDV',wkRdv,PHONING_OBJ_RDV)}
       </div>
-      <div class="metric" style="border-left:3px solid var(--warn-text)">
-        <div class="metric-label">Taux RDV semaine</div><div class="metric-value">${tauxSem}%</div>
-        <div class="metric-sub">${wkRdv} RDV / ${wkAppels} appels</div>
+      <div class="ph-kpi" style="--strip:var(--warn-text)">
+        <div class="ph-kpi-label">Taux RDV semaine</div><div class="ph-kpi-val">${tauxSem}%</div>
+        <div class="ph-kpi-sub">${wkRdv} RDV / ${wkAppels} appels</div>
       </div>
-      <div class="metric" style="border-left:3px solid #6B5FD4">
-        <div class="metric-label" style="margin-bottom:6px">Taux RDV mois</div>
-        <select onchange="phoningSetMonth(this.value)" style="width:100%;padding:5px 7px;font-size:12px;border:0.5px solid var(--border2);border-radius:7px;background:var(--bg);color:var(--text);margin-bottom:6px">
+      <div class="ph-kpi" style="--strip:#6B5FD4">
+        <div class="ph-kpi-label" style="margin-bottom:7px">Taux RDV mois</div>
+        <select class="ph-sel" style="width:100%;font-size:12px;padding:6px 8px;margin-bottom:8px" onchange="phoningSetMonth(this.value)">
           ${months.map(m=>`<option value="${m}" ${m===selMonth?'selected':''}>${phoningMonthLabel(m)}</option>`).join('')}
         </select>
-        <div class="metric-value">${tauxMois}%</div><div class="metric-sub">${moRdv} RDV / ${moAppels} appels</div>
+        <div class="ph-kpi-val">${tauxMois}%</div><div class="ph-kpi-sub">${moRdv} RDV / ${moAppels} appels</div>
       </div>
     </div>`;
 
   let form='';
   if(editable){
-    const showRdv=true; // par défaut le statut est "Rendez-vous pris"
-    form=`<div class="card card-inner" style="flex:0 0 300px;min-width:280px">
-      <div class="section-label" style="margin-top:0">Saisie d'un appel</div>
-      <div class="form-group"><label>Date de l'appel</label><input type="date" id="ph-date" value="${phoningTodayIso()}"></div>
-      <div class="form-group"><label>Client</label>
-        <input id="ph-prospect" list="ph-client-list" placeholder="Rechercher un magasin…" autocomplete="off">
-        <datalist id="ph-client-list">${magasins.map(m=>`<option value="${(m.groupe_enseigne+' '+m.ville).replace(/"/g,'&quot;')}">`).join('')}</datalist>
+    form=`<div class="ph-card" style="flex:0 0 312px;min-width:282px">
+      <div class="ph-card-head"><span class="ph-ic"><i class="ti ti-phone-plus"></i></span><h3>Nouvel appel</h3></div>
+      <div class="ph-field"><label>Date de l'appel</label><input type="date" id="ph-date" value="${phoningTodayIso()}"></div>
+      <div class="ph-field ph-ac"><label>Client</label>
+        <input id="ph-prospect" placeholder="Tapez le nom ou la ville…" autocomplete="off" oninput="phoningFilterClients(this.value)" onfocus="phoningFilterClients(this.value)">
+        <div class="ph-ac-dd" id="ph-client-dropdown"></div>
       </div>
-      <div class="form-group"><label>Résultat de l'appel</label>
+      <div class="ph-field"><label>Résultat de l'appel</label>
         <select id="ph-statut" onchange="phoningToggleRdv()">${PHONING_STATUTS.map(s=>`<option>${s}</option>`).join('')}</select></div>
-      <div id="ph-rdv-fields" style="display:${showRdv?'block':'none'}">
-        <div class="form-row">
-          <div class="form-group"><label>Heure du RDV</label><input type="time" id="ph-heure" value="09:00"></div>
-          <div class="form-group"><label>Durée</label><select id="ph-duree">${AGENDA_DUREES.map(d=>`<option value="${d.v}"${d.v===60?' selected':''}>${d.l}</option>`).join('')}</select></div>
+      <div class="ph-rdv-panel" id="ph-rdv-fields">
+        <div class="ph-rdv-title"><i class="ti ti-calendar-event"></i> Détails du rendez-vous</div>
+        <div class="ph-rdv-grid">
+          <div class="ph-field"><label>Heure</label><input type="time" id="ph-heure" value="09:00"></div>
+          <div class="ph-field"><label>Durée</label><select id="ph-duree">${AGENDA_DUREES.map(d=>`<option value="${d.v}"${d.v===60?' selected':''}>${d.l}</option>`).join('')}</select></div>
         </div>
       </div>
-      <div class="form-group"><label>Commentaires / Notes</label><textarea id="ph-note" rows="3" placeholder="Détails du projet, heure de rappel…"></textarea></div>
-      <button class="btn btn-primary" onclick="phoningAdd()"><i class="ti ti-plus"></i> Enregistrer l'appel</button>
+      <div class="ph-field"><label>Commentaires / Notes</label><textarea id="ph-note" placeholder="Détails du projet, heure de rappel…"></textarea></div>
+      <button class="ph-submit" onclick="phoningAdd()"><i class="ti ti-check"></i> Enregistrer l'appel</button>
     </div>`;
   }
 
   const sorted=weekRows.slice().sort((a,b)=>{const da=phoningFrToDate(a.date),db=phoningFrToDate(b.date);return (db?db.getTime():0)-(da?da.getTime():0);});
-  const cols=`<th style="text-align:left;padding:0 8px 8px">Date</th>${showCommercial?'<th style="text-align:left;padding:0 8px 8px">Commercial</th>':''}<th style="text-align:left;padding:0 8px 8px">Client</th><th style="text-align:left;padding:0 8px 8px">Statut</th><th style="text-align:left;padding:0 8px 8px">RDV</th><th style="text-align:left;padding:0 8px 8px">Commentaires</th>${editable?'<th style="padding:0 8px 8px"></th>':''}`;
-  const body=sorted.length?sorted.map(p=>`<tr style="border-bottom:0.5px solid var(--border)">
-      <td style="padding:9px 8px;white-space:nowrap">${p.date||'—'}</td>
-      ${showCommercial?`<td style="padding:9px 8px">${names[p.user_id]||'—'}</td>`:''}
-      <td style="padding:9px 8px">${p.prospect||'—'}</td>
-      <td style="padding:9px 8px">${phoningStatutBadge(p.statut)}</td>
-      <td style="padding:9px 8px;white-space:nowrap;color:var(--text2)">${p.heure?(p.heure+(p.duree?' · '+phoningDureeLabel(p.duree):'')):'—'}</td>
-      <td style="padding:9px 8px;color:var(--text2)">${p.note||''}</td>
-      ${editable?`<td style="padding:9px 8px;text-align:right"><button class="icon-btn danger" onclick="phoningDelete('${p.id}')" title="Supprimer"><i class="ti ti-trash"></i></button></td>`:''}
-    </tr>`).join(''):`<tr><td colspan="7" style="padding:26px;text-align:center;color:var(--text3);font-style:italic">Aucun appel enregistré pour cette semaine.</td></tr>`;
+  const cols=`<th>Date</th>${showCommercial?'<th>Commercial</th>':''}<th>Client</th><th>Statut</th><th>RDV</th><th>Commentaires</th>${editable?'<th></th>':''}`;
+  const body=sorted.length?sorted.map(p=>`<tr>
+      <td style="white-space:nowrap">${p.date||'—'}</td>
+      ${showCommercial?`<td>${names[p.user_id]||'—'}</td>`:''}
+      <td style="font-weight:500">${p.prospect||'—'}</td>
+      <td>${phoningStatutBadge(p.statut)}</td>
+      <td style="white-space:nowrap;color:var(--text2)">${p.heure?(p.heure+(p.duree?' · '+phoningDureeLabel(p.duree):'')):'—'}</td>
+      <td style="color:var(--text2)">${p.note||''}</td>
+      ${editable?`<td style="text-align:right"><button class="icon-btn danger" onclick="phoningDelete('${p.id}')" title="Supprimer"><i class="ti ti-trash"></i></button></td>`:''}
+    </tr>`).join(''):`<tr><td colspan="7" style="padding:30px;text-align:center;color:var(--text3);font-style:italic">Aucun appel cette semaine. Saisis ton premier appel pour démarrer.</td></tr>`;
 
-  const hist=`<div class="card" style="flex:1;min-width:300px;padding:14px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-      <div style="font-size:15px;font-weight:600">Historique des appels</div>
-      <button class="btn-sm" onclick="phoningExport()" style="background:var(--bg3);border:0.5px solid var(--border);color:var(--text)"><i class="ti ti-download"></i> Exporter</button>
+  const hist=`<div class="ph-card" style="flex:1;min-width:300px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      <div class="ph-card-head" style="margin-bottom:0"><span class="ph-ic" style="background:rgba(107,95,212,0.12);color:#6B5FD4"><i class="ti ti-history"></i></span><h3>Historique des appels</h3></div>
+      <button class="ph-sel" onclick="phoningExport()" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:7px 11px"><i class="ti ti-download"></i> Exporter</button>
     </div>
-    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);font-size:11px;text-transform:uppercase;letter-spacing:0.03em">${cols}</tr></thead>
-      <tbody>${body}</tbody></table></div>
+    <div style="overflow-x:auto"><table class="ph-table"><thead><tr>${cols}</tr></thead><tbody>${body}</tbody></table></div>
   </div>`;
 
-  el.innerHTML=`
-    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
+  el.innerHTML=`<div class="ph-wrap">
+    <div class="ph-toolbar">
       ${commSel}
-      <div style="display:flex;flex-direction:column;gap:3px;min-width:200px;flex:1">
-        <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Semaine (lundi → vendredi)</label>
-        ${weekSel}
-      </div>
+      <div class="ph-tb-field" style="min-width:210px;flex:1"><label>Semaine (lundi → vendredi)</label>${weekSel}</div>
     </div>
     ${kpi}
-    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">${form}${hist}</div>`;
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">${form}${hist}</div>
+  </div>`;
 }
 
 function phoningAdd(){
@@ -4175,6 +4214,21 @@ function phoningAdd(){
 function phoningToggleRdv(){
   const st=document.getElementById('ph-statut'), box=document.getElementById('ph-rdv-fields');
   if(st&&box)box.style.display=(st.value==='Rendez-vous pris')?'block':'none';
+}
+function phoningFilterClients(val){
+  const dd=document.getElementById('ph-client-dropdown');
+  if(!dd)return;
+  const q=(val||'').toLowerCase().trim();
+  if(q.length<2){dd.style.display='none';dd.innerHTML='';return;}
+  const matches=magasins.filter(m=>(m.ville&&m.ville.toLowerCase().includes(q))||(m.groupe_enseigne&&m.groupe_enseigne.toLowerCase().includes(q))).slice(0,8);
+  if(!matches.length){dd.style.display='none';dd.innerHTML='';return;}
+  dd.innerHTML=matches.map(m=>`<div class="ph-ac-item" onclick="phoningSelectClient('${m.id}')"><strong>${m.groupe_enseigne||''}</strong> — ${m.ville||''}${m.adresse?`<div class="sub">${m.adresse}</div>`:''}</div>`).join('');
+  dd.style.display='block';
+}
+function phoningSelectClient(id){
+  const m=magasins.find(x=>x.id===id);if(!m)return;
+  const inp=document.getElementById('ph-prospect');if(inp)inp.value=((m.groupe_enseigne||'')+' '+(m.ville||'')).trim();
+  const dd=document.getElementById('ph-client-dropdown');if(dd){dd.style.display='none';dd.innerHTML='';}
 }
 function phoningDelete(id){
   if(!confirm('Supprimer cet appel ?'))return;
