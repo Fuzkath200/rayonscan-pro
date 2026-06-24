@@ -3941,7 +3941,7 @@ function loadPhoningCache(){
   if(currentUser)phoning=phoning.filter(p=>!p.user_id||p.user_id===currentUser.id);
 }
 function savePhoningCache(){localStorage.setItem('rsp_phoning',JSON.stringify(phoning));}
-function phoningRowDb(p){return {id:p.id,user_id:currentUser?currentUser.id:null,date:p.date||null,prospect:p.prospect||null,statut:p.statut||null,note:p.note||null};}
+function phoningRowDb(p){return {id:p.id,user_id:currentUser?currentUser.id:null,date:p.date||null,prospect:p.prospect||null,statut:p.statut||null,note:p.note||null,heure:p.heure||null,duree:(p.duree!=null?p.duree:null)};}
 
 async function syncPhoning(){
   phoningSynced=true;
@@ -3953,7 +3953,7 @@ async function syncPhoning(){
     const remoteIds=new Set(remote.map(r=>r.id));
     const localOnly=phoning.filter(p=>!remoteIds.has(p.id));
     if(localOnly.length){await sb.from('phoning').upsert(localOnly.map(phoningRowDb));}
-    phoning=remote.map(r=>({id:r.id,user_id:r.user_id,date:r.date,prospect:r.prospect,statut:r.statut,note:r.note})).concat(localOnly);
+    phoning=remote.map(r=>({id:r.id,user_id:r.user_id,date:r.date,prospect:r.prospect,statut:r.statut,note:r.note,heure:r.heure,duree:r.duree})).concat(localOnly);
     savePhoningCache();
     if(document.getElementById(phoningContainerId))drawPhoning();
   }catch(e){/* hors-ligne ou table absente : on garde le cache local */}
@@ -3970,7 +3970,7 @@ async function loadPhoningTeam(){
     (tp||[]).forEach(p=>{names[p.id]=((p.prenom||'')+' '+(p.nom||'')).trim()||'—';});
     const ids=[currentUser.id].concat((tp||[]).map(p=>p.id));
     const{data:tr}=await sb.from('phoning').select('*').in('user_id',ids);
-    rows=(tr||[]).map(r=>({id:r.id,user_id:r.user_id,date:r.date,prospect:r.prospect,statut:r.statut,note:r.note}));
+    rows=(tr||[]).map(r=>({id:r.id,user_id:r.user_id,date:r.date,prospect:r.prospect,statut:r.statut,note:r.note,heure:r.heure,duree:r.duree}));
   }catch(e){}
   phoningTeam={rows,names};
 }
@@ -3998,6 +3998,7 @@ function phoningMonF(dateStr){const d=phoningFrToDate(dateStr);if(!d)return null
 function phoningMonthKey(dateStr){const p=String(dateStr||'').split('/');return p.length===3?p[1]+'/'+p[2]:null;}
 function phoningMonthLabel(mk){const M=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];const p=mk.split('/');return (M[(+p[0])-1]||p[0])+' '+p[1];}
 function phoningRdv(rows){return rows.filter(r=>r.statut==='Rendez-vous pris').length;}
+function phoningDureeLabel(v){const d=AGENDA_DUREES.find(x=>x.v===+v);return d?d.l:(v?v+' min':'');}
 
 function phoningWeeksOf(scope){
   const map={};
@@ -4093,27 +4094,38 @@ function drawPhoning(){
 
   let form='';
   if(editable){
+    const showRdv=true; // par défaut le statut est "Rendez-vous pris"
     form=`<div class="card card-inner" style="flex:0 0 300px;min-width:280px">
       <div class="section-label" style="margin-top:0">Saisie d'un appel</div>
       <div class="form-group"><label>Date de l'appel</label><input type="date" id="ph-date" value="${phoningTodayIso()}"></div>
-      <div class="form-group"><label>Entreprise / Prospect</label><input id="ph-prospect" placeholder="Ex. ABC Corp ou M. Dupont"></div>
+      <div class="form-group"><label>Client</label>
+        <input id="ph-prospect" list="ph-client-list" placeholder="Rechercher un magasin…" autocomplete="off">
+        <datalist id="ph-client-list">${magasins.map(m=>`<option value="${(m.groupe_enseigne+' '+m.ville).replace(/"/g,'&quot;')}">`).join('')}</datalist>
+      </div>
       <div class="form-group"><label>Résultat de l'appel</label>
-        <select id="ph-statut">${PHONING_STATUTS.map(s=>`<option>${s}</option>`).join('')}</select></div>
+        <select id="ph-statut" onchange="phoningToggleRdv()">${PHONING_STATUTS.map(s=>`<option>${s}</option>`).join('')}</select></div>
+      <div id="ph-rdv-fields" style="display:${showRdv?'block':'none'}">
+        <div class="form-row">
+          <div class="form-group"><label>Heure du RDV</label><input type="time" id="ph-heure" value="09:00"></div>
+          <div class="form-group"><label>Durée</label><select id="ph-duree">${AGENDA_DUREES.map(d=>`<option value="${d.v}"${d.v===60?' selected':''}>${d.l}</option>`).join('')}</select></div>
+        </div>
+      </div>
       <div class="form-group"><label>Commentaires / Notes</label><textarea id="ph-note" rows="3" placeholder="Détails du projet, heure de rappel…"></textarea></div>
       <button class="btn btn-primary" onclick="phoningAdd()"><i class="ti ti-plus"></i> Enregistrer l'appel</button>
     </div>`;
   }
 
   const sorted=weekRows.slice().sort((a,b)=>{const da=phoningFrToDate(a.date),db=phoningFrToDate(b.date);return (db?db.getTime():0)-(da?da.getTime():0);});
-  const cols=`<th style="text-align:left;padding:0 8px 8px">Date</th>${showCommercial?'<th style="text-align:left;padding:0 8px 8px">Commercial</th>':''}<th style="text-align:left;padding:0 8px 8px">Prospect</th><th style="text-align:left;padding:0 8px 8px">Statut</th><th style="text-align:left;padding:0 8px 8px">Commentaires</th>${editable?'<th style="padding:0 8px 8px"></th>':''}`;
+  const cols=`<th style="text-align:left;padding:0 8px 8px">Date</th>${showCommercial?'<th style="text-align:left;padding:0 8px 8px">Commercial</th>':''}<th style="text-align:left;padding:0 8px 8px">Client</th><th style="text-align:left;padding:0 8px 8px">Statut</th><th style="text-align:left;padding:0 8px 8px">RDV</th><th style="text-align:left;padding:0 8px 8px">Commentaires</th>${editable?'<th style="padding:0 8px 8px"></th>':''}`;
   const body=sorted.length?sorted.map(p=>`<tr style="border-bottom:0.5px solid var(--border)">
       <td style="padding:9px 8px;white-space:nowrap">${p.date||'—'}</td>
       ${showCommercial?`<td style="padding:9px 8px">${names[p.user_id]||'—'}</td>`:''}
       <td style="padding:9px 8px">${p.prospect||'—'}</td>
       <td style="padding:9px 8px">${phoningStatutBadge(p.statut)}</td>
+      <td style="padding:9px 8px;white-space:nowrap;color:var(--text2)">${p.heure?(p.heure+(p.duree?' · '+phoningDureeLabel(p.duree):'')):'—'}</td>
       <td style="padding:9px 8px;color:var(--text2)">${p.note||''}</td>
       ${editable?`<td style="padding:9px 8px;text-align:right"><button class="icon-btn danger" onclick="phoningDelete('${p.id}')" title="Supprimer"><i class="ti ti-trash"></i></button></td>`:''}
-    </tr>`).join(''):`<tr><td colspan="6" style="padding:26px;text-align:center;color:var(--text3);font-style:italic">Aucun appel enregistré pour cette semaine.</td></tr>`;
+    </tr>`).join(''):`<tr><td colspan="7" style="padding:26px;text-align:center;color:var(--text3);font-style:italic">Aucun appel enregistré pour cette semaine.</td></tr>`;
 
   const hist=`<div class="card" style="flex:1;min-width:300px;padding:14px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
@@ -4146,13 +4158,23 @@ function phoningAdd(){
   const prospect=(document.getElementById('ph-prospect').value||'').trim();
   const statut=document.getElementById('ph-statut').value;
   const note=(document.getElementById('ph-note').value||'').trim();
+  let heure=null,duree=null;
+  if(statut==='Rendez-vous pris'){
+    const hEl=document.getElementById('ph-heure'), duEl=document.getElementById('ph-duree');
+    heure=hEl&&hEl.value?hEl.value:null;
+    duree=duEl&&duEl.value?parseInt(duEl.value,10):null;
+  }
   if(!date){alert('Indique la date de l\'appel.');return;}
-  if(!prospect){alert('Indique le nom du prospect.');return;}
-  const p={id:'ph'+Date.now()+Math.random().toString(36).slice(2,7),user_id:currentUser?currentUser.id:null,date,prospect,statut,note};
+  if(!prospect){alert('Indique le client.');return;}
+  const p={id:'ph'+Date.now()+Math.random().toString(36).slice(2,7),user_id:currentUser?currentUser.id:null,date,prospect,statut,note,heure,duree};
   phoning.unshift(p);
   savePhoningCache();
   enqueueSync('phoning','upsert',phoningRowDb(p),p.id);
   drawPhoning();
+}
+function phoningToggleRdv(){
+  const st=document.getElementById('ph-statut'), box=document.getElementById('ph-rdv-fields');
+  if(st&&box)box.style.display=(st.value==='Rendez-vous pris')?'block':'none';
 }
 function phoningDelete(id){
   if(!confirm('Supprimer cet appel ?'))return;
@@ -4175,7 +4197,7 @@ function phoningExport(){
   else scope=((phoningTeam&&phoningTeam.rows)||[]).filter(r=>r.user_id===phoningView);
   const data=scope.slice().sort((a,b)=>{const da=phoningFrToDate(a.date),db=phoningFrToDate(b.date);return (db?db.getTime():0)-(da?da.getTime():0);}).map(p=>{
     const mf=phoningMonF(p.date);
-    const row={Date:p.date||'',Prospect:p.prospect||'',Statut:p.statut||'',Commentaires:p.note||'',Semaine:mf?(mf.mon+' au '+mf.fri):''};
+    const row={Date:p.date||'',Client:p.prospect||'',Statut:p.statut||'',Heure:p.heure||'','Durée':p.duree?phoningDureeLabel(p.duree):'',Commentaires:p.note||'',Semaine:mf?(mf.mon+' au '+mf.fri):''};
     if(isManager&&phoningView==='equipe')row.Commercial=names[p.user_id]||'';
     return row;
   });
