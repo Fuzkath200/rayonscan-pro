@@ -322,6 +322,9 @@ canvas{display:block;margin:0 auto}
     <button class="sidebar-nav-item" id="snav-centrales" onclick="desktopTab('centrales')">
       <i class="ti ti-network"></i> Centrales
     </button>
+    <button class="sidebar-nav-item" id="snav-magasins" onclick="desktopTab('magasins')">
+      <i class="ti ti-building-warehouse"></i> Magasins
+    </button>
     <button class="sidebar-nav-item" onclick="desktopNewReleve()" style="margin-top:8px;color:#1D9E75">
       <i class="ti ti-plus"></i> Nouveau relevé
     </button>
@@ -367,6 +370,7 @@ canvas{display:block;margin:0 auto}
     <button class="tab4" onclick="switchTab('enseignes',this)">Enseignes</button>
     <button class="tab4" onclick="switchTab('catalogue',this)">Catalogue</button>
     <button class="tab4" onclick="switchTab('centrales',this)">Centrales</button>
+    <button class="tab4" id="tab-btn-magasins" onclick="switchTab('magasins',this)">Magasins</button>
   </div>
   <div id="tab-releves">
     <button class="btn" onclick="newReleve()"><i class="ti ti-plus" aria-hidden="true"></i> Nouveau relevé</button>
@@ -394,6 +398,13 @@ canvas{display:block;margin:0 auto}
   <div id="tab-centrales" style="display:none">
     <button class="btn" onclick="openModal('centrale')"><i class="ti ti-plus" aria-hidden="true"></i> Ajouter une centrale</button>
     <div class="card" id="centrales-list"></div>
+  </div>
+  <div id="tab-magasins" style="display:none">
+    <div class="form-group" style="margin-bottom:12px">
+      <input type="text" id="magasins-search" placeholder="Rechercher un magasin…" oninput="renderMagasinsList(this.value)" style="width:100%;padding:10px;border:0.5px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:14px">
+    </div>
+    <button class="btn" onclick="openMagasinModal()"><i class="ti ti-plus" aria-hidden="true"></i> Ajouter un magasin</button>
+    <div class="card" id="magasins-list"></div>
   </div>
 </div>
 
@@ -578,6 +589,9 @@ let products=[];
 let releves=[];
 let centrales=[];
 let magasins=[];
+let magasinsAllRaw=[]; // tous les magasins (toutes équipes), non filtré — utilisé uniquement par la vue admin de l'onglet Magasins
+let magasinsSelectedUserId=null; // pour l'admin : null = moi
+let magasinsTeamNames=null; // {userId: nom} chargé à la demande pour l'admin
 let currentReleve=null;
 let facings={};
 let photos=[];
@@ -605,6 +619,11 @@ function initDesktop(){
     const tabBtn = document.getElementById('tab-btn-equipe');
     if(tabBtn) tabBtn.style.display = '';
   }
+  // Magasins = onglet individuel (CS uniquement), pas pour le directeur
+  if(currentProfile && currentProfile.role==='directeur'){
+    const m1=document.getElementById('snav-magasins'); if(m1) m1.style.display='none';
+    const m2=document.getElementById('tab-btn-magasins'); if(m2) m2.style.display='none';
+  }
   // Infos user
   if(currentProfile){
     document.getElementById('sidebar-user-name').textContent = (currentProfile.prenom||'')+' '+(currentProfile.nom||'');
@@ -624,7 +643,7 @@ function desktopTab(tab){
   const activeBtn = document.getElementById('snav-'+tab);
   if(activeBtn) activeBtn.classList.add('active');
   // Titre
-  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda', synthese:'Synthèse PA', phoning:'Phoning'};
+  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', magasins:'Magasins', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda', synthese:'Synthèse PA', phoning:'Phoning'};
   document.getElementById('desktop-topbar-title').textContent = titles[tab]||tab;
   document.getElementById('desktop-back-btn').style.display = 'none';
   // Rendu du contenu
@@ -670,6 +689,7 @@ function desktopTab(tab){
     else if(tab==='enseignes') renderEnseignesDesktop();
     else if(tab==='catalogue') renderCatalogueDesktop();
     else if(tab==='centrales') renderCentralesDesktop();
+    else if(tab==='magasins') renderMagasinsListDesktop();
   }
 }
 
@@ -763,7 +783,7 @@ async function renderEquipeDesktop(){
   if(!el) return;
   el.innerHTML='<div class="empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>Chargement…</div>';
   try{
-    const{data:teamProfiles}=await sb.from('profiles').select('*').eq('manager_id',currentUser.id);
+    const teamProfiles=await fetchTeamProfiles('*');
     const teamIds=(teamProfiles||[]).map(p=>p.id);
     if(!teamIds.length){el.innerHTML='<div class="empty"><i class="ti ti-users"></i>Aucun commercial dans votre équipe.</div>';return;}
     const{data:teamReleves}=await sb.from('releves').select('*').in('user_id',teamIds);
@@ -957,6 +977,16 @@ function desktopGoBack(){
 // AUTH
 let currentUser=null;
 let currentProfile=null;
+function isAdminNow(){return currentProfile&&currentProfile.role==='admin';}
+async function fetchTeamProfiles(selectCols){
+  // Admin = accès total à tous les profils (sauf soi-même). Directeur = seulement son équipe (manager_id).
+  if(isAdminNow()){
+    const{data}=await sb.from('profiles').select(selectCols||'*').neq('id',currentUser.id);
+    return data||[];
+  }
+  const{data}=await sb.from('profiles').select(selectCols||'*').eq('manager_id',currentUser.id);
+  return data||[];
+}
 
 function showLoginScreen(){
   document.querySelector('.shell').innerHTML=`
@@ -1087,13 +1117,19 @@ async function init(){
     normMlReleves(releves);
     reapplyQueueToReleves();   // garde les relevés encore en file (non synchronisés)
     saveLocal();
-    magasins=magRes.data||[];
+    magasins=(magRes.data||[]).filter(m=>(m.user_id||currentUser.id)===currentUser.id);
+    magasinsAllRaw=magRes.data||[]; // copie brute non filtrée, utile pour la vue admin du gestionnaire de magasins
     await migrateIntermarche();
     setSyncStatus('ok','Synchronisé');
   // Affiche onglet équipe pour directeur et admin
   if(currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin')){
     const btn=document.getElementById('tab-btn-equipe');
     if(btn)btn.style.display='';
+  }
+  // Magasins = onglet individuel (CS uniquement), pas pour le directeur
+  if(currentProfile&&currentProfile.role==='directeur'){
+    const mb=document.getElementById('tab-btn-magasins');
+    if(mb)mb.style.display='none';
   }
   renderHome();initPhotoListener();await loadDN();loadAssortimentsCache();syncAssortiments();await loadContacts();await loadJoursTerrain();loadPhoningCache();syncPhoning();if(window.innerWidth>=768)initDesktop();
   }catch(e){
@@ -1174,13 +1210,14 @@ function showScreen(id){
 function switchTab(tab,btn){
   document.querySelectorAll('.tab4').forEach(t=>t.classList.remove('active'));
   btn.classList.add('active');
-  ['releves','equipe','enseignes','catalogue','centrales','dashboard','clients','activite','agenda','synthese','phoning'].forEach(t=>{
+  ['releves','equipe','enseignes','catalogue','centrales','magasins','dashboard','clients','activite','agenda','synthese','phoning'].forEach(t=>{
     const el=document.getElementById('tab-'+t);
     if(el)el.style.display=t===tab?'block':'none';
   });
   if(tab==='catalogue')renderCatalogue();
   if(tab==='enseignes')renderEnseignes();
   if(tab==='centrales')renderCentrales();
+  if(tab==='magasins')renderMagasinsList();
   if(tab==='equipe')renderEquipe();
   if(tab==='dashboard')renderDashboard('dashboard-content');
   if(tab==='clients')renderClients('clients-content','');
@@ -1207,11 +1244,61 @@ const AGENDA_TYPES={
 const AGENDA_DUREES=[{v:20,l:'20 min'},{v:40,l:'40 min'},{v:50,l:'50 min'},{v:60,l:'1h'},{v:90,l:'1h30'},{v:120,l:'2h'},{v:180,l:'3h'}];
 
 let agendaSynced=false;
+let agendaView='jour'; // 'jour' | 'semaine'
+let agendaTeam=null; // {rows, names} si manager/admin
+let agendaSelectedUserId=null; // null = moi
+try{agendaView=localStorage.getItem('rsp_agenda_view')||'jour';}catch(e){}
 function loadAgendaCache(){
   try{agenda=JSON.parse(localStorage.getItem('rsp_agenda')||'[]');}catch(e){agenda=[];}
   if(!Array.isArray(agenda))agenda=[];
   if(currentUser)agenda=agenda.filter(a=>!a.user_id||a.user_id===currentUser.id);
 }
+async function loadAgendaTeam(){
+  const isManager=currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin');
+  if(!isManager||typeof sb==='undefined'||!sb){agendaTeam=null;return;}
+  const names={};
+  if(currentUser&&currentProfile)names[currentUser.id]=((currentProfile.prenom||'')+' '+(currentProfile.nom||'')).trim()||'Moi';
+  let rows=[];
+  try{
+    const tp=await fetchTeamProfiles('id,prenom,nom');
+    (tp||[]).forEach(p=>{names[p.id]=((p.prenom||'')+' '+(p.nom||'')).trim()||'—';});
+    const ids=[currentUser.id].concat((tp||[]).map(p=>p.id));
+    const{data:tr}=await sb.from('agenda').select('*').in('user_id',ids);
+    rows=(tr||[]).map(r=>({id:r.id,user_id:r.user_id,magasin:r.magasin,enseigne:r.enseigne,date:r.date,heure:r.heure,duree:r.duree,type:r.type,note:r.note}));
+  }catch(e){}
+  agendaTeam={rows,names};
+}
+function agendaSetView(v){agendaView=v;try{localStorage.setItem('rsp_agenda_view',v);}catch(e){}renderAgenda(agendaContainerId);}
+function agendaSetUser(uid){agendaSelectedUserId=uid||null;renderAgenda(agendaContainerId);}
+function agendaActiveList(){
+  if(agendaSelectedUserId&&agendaSelectedUserId!==currentUser.id&&agendaTeam){
+    return agendaTeam.rows.filter(a=>a.user_id===agendaSelectedUserId);
+  }
+  return agenda;
+}
+// --- Semaine ISO (lundi -> vendredi, cohérent avec le reste de l'app) ---
+function agendaMondayOf(dmy){
+  const d=dmyToDate(dmy)||new Date();
+  const day=d.getDay(); // 0=dim..6=sam
+  const diff=(day===0?-6:1-day);
+  d.setDate(d.getDate()+diff);
+  return d;
+}
+function agendaWeekDays(dmy){
+  const mon=agendaMondayOf(dmy);
+  const out=[];
+  for(let i=0;i<5;i++){const d=new Date(mon);d.setDate(mon.getDate()+i);out.push(dateToDmy(d));}
+  return out;
+}
+function agendaWeekLabel(dmy){
+  const days=agendaWeekDays(dmy);
+  const d1=dmyToDate(days[0]),d2=dmyToDate(days[4]);
+  const fmt=d=>d?d.toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):'';
+  return 'Semaine du '+fmt(d1)+' au '+fmt(d2);
+}
+function agendaWeekPrev(){agendaSelectedDate=agendaAddDays(agendaSelectedDate,-7);renderAgenda(agendaContainerId);}
+function agendaWeekNext(){agendaSelectedDate=agendaAddDays(agendaSelectedDate,7);renderAgenda(agendaContainerId);}
+
 function loadAgenda(){loadAgendaCache();}
 function saveAgenda(){localStorage.setItem('rsp_agenda',JSON.stringify(agenda));}
 function agendaRow(a){return{id:a.id,user_id:currentUser?currentUser.id:null,magasin:a.magasin||null,enseigne:a.enseigne||null,date:a.date||null,heure:a.heure||null,duree:a.duree||null,type:a.type||null,note:a.note||null};}
@@ -1263,18 +1350,56 @@ function renderAgenda(containerId){
   if(!el)return;
   if(!agendaSelectedDate)agendaSelectedDate=agendaToday();
   if(!agendaSynced)syncAgenda();
+  const isManager=currentProfile&&(currentProfile.role==='directeur'||currentProfile.role==='admin');
+  if(isManager&&!agendaTeam){loadAgendaTeam().then(()=>{if(document.getElementById(agendaContainerId))renderAgenda(agendaContainerId);});}
+
+  const viewToggleHtml=`<div class="dnseg" style="width:160px;margin:0 auto 10px">
+    <button class="${agendaView==='jour'?'on':''}" style="font-size:12px;padding:6px" onclick="agendaSetView('jour')">Jour</button>
+    <button class="${agendaView==='semaine'?'on':''}" style="font-size:12px;padding:6px" onclick="agendaSetView('semaine')">Semaine</button>
+  </div>`;
+
+  let userSelectHtml='';
+  if(isManager&&agendaTeam){
+    const opts=Object.entries(agendaTeam.names).map(([uid,nom])=>`<option value="${uid}" ${(!agendaSelectedUserId&&uid===currentUser.id)||agendaSelectedUserId===uid?'selected':''}>${uid===currentUser.id?'Moi':nom}</option>`).join('');
+    userSelectHtml=`<div style="margin-bottom:10px"><select onchange="agendaSetUser(this.value)" style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px">${opts}</select></div>`;
+  }
+
+  const bodyHtml = agendaView==='semaine' ? renderAgendaWeekHtml() : renderAgendaDayHtml();
+  const readOnly = isManager && agendaSelectedUserId && agendaSelectedUserId!==currentUser.id;
+
+  el.innerHTML=`
+    ${userSelectHtml}
+    ${viewToggleHtml}
+    ${bodyHtml}
+    ${readOnly?'':'<button class="btn btn-primary" style="margin-top:8px" onclick="openAgendaModal()"><i class="ti ti-plus" aria-hidden="true"></i> Nouveau rendez-vous</button>'}`;
+}
+
+function renderAgendaDayHtml(){
   const aRevoir=clientsARevoir();
-  const evs=agenda.filter(a=>a.date===agendaSelectedDate).sort((a,b)=>String(a.heure).localeCompare(String(b.heure)));
+  const list=agendaActiveList();
+  const evs=list.filter(a=>a.date===agendaSelectedDate).sort((a,b)=>String(a.heure).localeCompare(String(b.heure)));
   const bannerHtml=aRevoir.length?`<div onclick="agendaShowRevoir()" style="margin:0 0 12px;background:var(--warn-bg);border-radius:var(--radius);padding:9px 12px;display:flex;align-items:center;gap:8px;cursor:pointer">
       <i class="ti ti-clock-exclamation" style="font-size:17px;color:var(--warn-text)" aria-hidden="true"></i>
       <span style="color:var(--warn-text);font-size:12px">${aRevoir.length} client${aRevoir.length>1?'s':''} pas vu${aRevoir.length>1?'s':''} depuis +${AGENDA_SEUIL} jours</span>
       <i class="ti ti-chevron-right" style="font-size:15px;color:var(--warn-text);margin-left:auto" aria-hidden="true"></i>
     </div>`:'';
-  const evHtml=evs.length?evs.map(a=>{
-    const meta=AGENDA_TYPES[a.type]||AGENDA_TYPES['Autre'];
-    const j=joursDepuisVisite(a.magasin);
-    const overdue=(j!=null&&j>AGENDA_SEUIL);
-    return`<div class="row" style="gap:10px;margin-bottom:8px" onclick="tapAgendaEvent('${a.id}')">
+  const evHtml=evs.length?evs.map(a=>agendaEventCardHtml(a)).join(''):'<div class="empty" style="padding:2rem 1rem"><i class="ti ti-calendar-off"></i>Aucun rendez-vous ce jour.</div>';
+  return `
+    <div class="row" style="align-items:center;justify-content:space-between;margin-bottom:12px">
+      <button class="back-btn" style="font-size:18px" onclick="agendaPrev()"><i class="ti ti-chevron-left"></i></button>
+      <span style="font-size:15px;font-weight:500">${agendaLabel(agendaSelectedDate)}</span>
+      <button class="back-btn" style="font-size:18px" onclick="agendaNext()"><i class="ti ti-chevron-right"></i></button>
+    </div>
+    <div style="text-align:center;margin-bottom:12px"><button class="btn" style="display:inline-flex;width:auto;padding:5px 12px;font-size:12px;margin:0" onclick="agendaToday2()">Aujourd'hui</button></div>
+    ${bannerHtml}
+    ${evHtml}`;
+}
+
+function agendaEventCardHtml(a){
+  const meta=AGENDA_TYPES[a.type]||AGENDA_TYPES['Autre'];
+  const j=joursDepuisVisite(a.magasin);
+  const overdue=(j!=null&&j>AGENDA_SEUIL);
+  return`<div class="row" style="gap:10px;margin-bottom:8px" onclick="tapAgendaEvent('${a.id}')">
       <span style="font-size:12px;color:var(--text3);width:42px;padding-top:11px;flex-shrink:0">${a.heure||''}</span>
       <div style="flex:1;display:flex;overflow:hidden;border:0.5px solid var(--border);border-radius:var(--radius-lg);cursor:pointer">
         <div style="width:4px;background:${meta.strip};flex-shrink:0"></div>
@@ -1289,19 +1414,56 @@ function renderAgenda(containerId){
         </div>
       </div>
     </div>`;
-  }).join(''):'<div class="empty" style="padding:2rem 1rem"><i class="ti ti-calendar-off"></i>Aucun rendez-vous ce jour.</div>';
-
-  el.innerHTML=`
-    <div class="row" style="align-items:center;justify-content:space-between;margin-bottom:12px">
-      <button class="back-btn" style="font-size:18px" onclick="agendaPrev()"><i class="ti ti-chevron-left"></i></button>
-      <span style="font-size:15px;font-weight:500">${agendaLabel(agendaSelectedDate)}</span>
-      <button class="back-btn" style="font-size:18px" onclick="agendaNext()"><i class="ti ti-chevron-right"></i></button>
-    </div>
-    <div style="text-align:center;margin-bottom:12px"><button class="btn" style="display:inline-flex;width:auto;padding:5px 12px;font-size:12px;margin:0" onclick="agendaToday2()">Aujourd'hui</button></div>
-    ${bannerHtml}
-    ${evHtml}
-    <button class="btn btn-primary" style="margin-top:8px" onclick="openAgendaModal()"><i class="ti ti-plus" aria-hidden="true"></i> Nouveau rendez-vous</button>`;
 }
+
+function renderAgendaWeekHtml(){
+  const list=agendaActiveList();
+  const days=agendaWeekDays(agendaSelectedDate);
+  const jourLabels=['Lun','Mar','Mer','Jeu','Ven'];
+  const isMobile=window.innerWidth<768;
+  const header=`
+    <div class="row" style="align-items:center;justify-content:space-between;margin-bottom:12px">
+      <button class="back-btn" style="font-size:18px" onclick="agendaWeekPrev()"><i class="ti ti-chevron-left"></i></button>
+      <span style="font-size:15px;font-weight:500">${agendaWeekLabel(agendaSelectedDate)}</span>
+      <button class="back-btn" style="font-size:18px" onclick="agendaWeekNext()"><i class="ti ti-chevron-right"></i></button>
+    </div>
+    <div style="text-align:center;margin-bottom:12px"><button class="btn" style="display:inline-flex;width:auto;padding:5px 12px;font-size:12px;margin:0" onclick="agendaToday2()">Aujourd'hui</button></div>`;
+
+  if(isMobile){
+    // Liste verticale compacte jour par jour
+    const body=days.map((d,i)=>{
+      const evs=list.filter(a=>a.date===d).sort((a,b)=>String(a.heure).localeCompare(String(b.heure)));
+      const isToday=d===agendaToday();
+      return `<div style="margin-bottom:14px">
+        <div style="font-size:12px;font-weight:600;color:${isToday?'#1D9E75':'var(--text2)'};text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px">${jourLabels[i]} ${agendaLabel(d).split(' ').slice(1).join(' ')}</div>
+        ${evs.length?evs.map(a=>agendaEventCardHtml(a)).join(''):'<div class="empty" style="padding:0.6rem 0.4rem;font-size:12px">Rien de prévu</div>'}
+      </div>`;
+    }).join('');
+    return header+body;
+  }
+
+  // Grille 5 colonnes desktop
+  const cols=days.map((d,i)=>{
+    const evs=list.filter(a=>a.date===d).sort((a,b)=>String(a.heure).localeCompare(String(b.heure)));
+    const isToday=d===agendaToday();
+    const dnum=d.split('/')[0];
+    return `<div style="flex:1;min-width:0;border-right:0.5px solid var(--border);padding:0 6px">
+      <div style="text-align:center;margin-bottom:8px">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.04em">${jourLabels[i]}</div>
+        <div style="font-size:14px;font-weight:600;color:${isToday?'#1D9E75':'var(--text)'}">${dnum}</div>
+      </div>
+      ${evs.length?evs.map(a=>`<div onclick="tapAgendaEvent('${a.id}')" style="cursor:pointer;margin-bottom:6px;border:0.5px solid var(--border);border-radius:8px;overflow:hidden;display:flex">
+          <div style="width:3px;background:${(AGENDA_TYPES[a.type]||AGENDA_TYPES['Autre']).strip};flex-shrink:0"></div>
+          <div style="padding:5px 6px;font-size:11px;overflow:hidden">
+            <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.magasin||'—'}</div>
+            <div style="color:var(--text3)">${a.heure||''}</div>
+          </div>
+        </div>`).join(''):''}
+    </div>`;
+  }).join('');
+  return header+`<div style="display:flex;overflow-x:auto;padding-bottom:4px">${cols}</div>`;
+}
+
 function agendaPrev(){agendaSelectedDate=agendaAddDays(agendaSelectedDate,-1);renderAgenda(agendaContainerId);}
 function agendaNext(){agendaSelectedDate=agendaAddDays(agendaSelectedDate,1);renderAgenda(agendaContainerId);}
 function agendaToday2(){agendaSelectedDate=agendaToday();renderAgenda(agendaContainerId);}
@@ -1419,7 +1581,7 @@ async function synthesePAData(){
   let scope=releves.slice();
   if(isManager){
     try{
-      const{data:tp}=await sb.from('profiles').select('id').eq('manager_id',currentUser.id);
+      const tp=await fetchTeamProfiles('id');
       const ids=[currentUser.id].concat((tp||[]).map(p=>p.id));
       const{data:tr}=await sb.from('releves').select('*').in('user_id',ids);
       if(tr&&tr.length)scope=tr;
@@ -1697,8 +1859,7 @@ async function getDNScopeReleves(){
   let scope=releves.slice();
   if(isManager){
     try{
-      const{data:tp}=await sb.from('profiles').select('id,prenom,nom').eq('manager_id',currentUser.id);
-      (tp||[]).forEach(p=>{dnUserNames[p.id]=((p.prenom||'')+' '+(p.nom||'')).trim()||'—';});
+      const tp=await fetchTeamProfiles('id,prenom,nom');
       const ids=[currentUser.id].concat((tp||[]).map(p=>p.id));
       const{data:tr}=await sb.from('releves').select('*').in('user_id',ids);
       if(tr&&tr.length)scope=tr;
@@ -1893,7 +2054,7 @@ async function renderEquipe(){
   if(!el)return;
   el.innerHTML='<div class="empty"><i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>Chargement…</div>';
   try{
-    const{data:teamProfiles}=await sb.from('profiles').select('*').eq('manager_id',currentUser.id);
+    const teamProfiles=await fetchTeamProfiles('*');
     const teamIds=(teamProfiles||[]).map(p=>p.id);
     if(!teamIds.length){el.innerHTML='<div class="empty"><i class="ti ti-users"></i>Aucun commercial dans votre équipe.</div>';return;}
     const{data:teamReleves}=await sb.from('releves').select('*').in('user_id',teamIds);
@@ -2321,7 +2482,7 @@ async function loadActiviteData(){
   let list=(releves||[]).map(r=>({...r, user_id:r.user_id||(currentUser&&currentUser.id)}));
   if(isManager){
     try{
-      const {data:tp}=await sb.from("profiles").select("*").eq("manager_id",currentUser.id);
+      const tp=await fetchTeamProfiles("*");
       const ids=(tp||[]).map(p=>p.id);
       (tp||[]).forEach(p=>{ names[p.id]=((p.prenom||"")+" "+(p.nom||"")).trim()||"—"; });
       const allIds=[currentUser.id].concat(ids);
@@ -4013,7 +4174,7 @@ async function loadPhoningTeam(){
   if(currentUser&&currentProfile)names[currentUser.id]=((currentProfile.prenom||'')+' '+(currentProfile.nom||'')).trim()||'Moi';
   let rows=[];
   try{
-    const{data:tp}=await sb.from('profiles').select('id,prenom,nom').eq('manager_id',currentUser.id);
+    const tp=await fetchTeamProfiles('id,prenom,nom');
     (tp||[]).forEach(p=>{names[p.id]=((p.prenom||'')+' '+(p.nom||'')).trim()||'—';});
     const ids=[currentUser.id].concat((tp||[]).map(p=>p.id));
     const{data:tr}=await sb.from('phoning').select('*').in('user_id',ids);
@@ -4315,6 +4476,147 @@ function phoningExport(){
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Phoning');
   XLSX.writeFile(wb,'phoning_'+phoningTodayFr().replace(/\//g,'-')+'.xlsx');
+}
+
+// ========== GESTIONNAIRE DE MAGASINS (par commercial) ==========
+function magasinDisplayName(m){return (m.groupe_enseigne||'')+' — '+(m.ville||'');}
+
+async function loadMagasinsTeamNames(){
+  if(!isAdminNow()){magasinsTeamNames=null;return;}
+  const names={};
+  if(currentUser&&currentProfile)names[currentUser.id]=((currentProfile.prenom||'')+' '+(currentProfile.nom||'')).trim()||'Moi';
+  try{
+    const tp=await fetchTeamProfiles('id,prenom,nom');
+    (tp||[]).forEach(p=>{names[p.id]=((p.prenom||'')+' '+(p.nom||'')).trim()||'—';});
+  }catch(e){}
+  magasinsTeamNames=names;
+}
+
+function magasinsActiveList(){
+  if(isAdminNow()&&magasinsSelectedUserId&&magasinsSelectedUserId!==currentUser.id){
+    return magasinsAllRaw.filter(m=>m.user_id===magasinsSelectedUserId);
+  }
+  return magasins;
+}
+
+function magasinsSetUser(uid){magasinsSelectedUserId=uid||null;renderMagasinsList();if(desktopMode)renderMagasinsListDesktop();}
+
+function magasinsUserSelectHtml(){
+  if(!isAdminNow()||!magasinsTeamNames)return'';
+  const opts=Object.entries(magasinsTeamNames).map(([uid,nom])=>`<option value="${uid}" ${(!magasinsSelectedUserId&&uid===currentUser.id)||magasinsSelectedUserId===uid?'selected':''}>${uid===currentUser.id?'Moi':nom}</option>`).join('');
+  return `<div style="margin-bottom:12px"><select onchange="magasinsSetUser(this.value)" style="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px">${opts}</select></div>`;
+}
+
+function magasinsListRowsHtml(filter){
+  const q=(filter||'').toLowerCase().trim();
+  let list=magasinsActiveList().slice().sort((a,b)=>magasinDisplayName(a).localeCompare(magasinDisplayName(b)));
+  if(q)list=list.filter(m=>(m.ville||'').toLowerCase().includes(q)||(m.groupe_enseigne||'').toLowerCase().includes(q)||(m.adresse||'').toLowerCase().includes(q));
+  if(!list.length)return'<div class="empty"><i class="ti ti-building-warehouse"></i>Aucun magasin.</div>';
+  const readOnly=isAdminNow()&&magasinsSelectedUserId&&magasinsSelectedUserId!==currentUser.id;
+  return list.map(m=>`<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:0.5px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:500">${m.groupe_enseigne||'—'} <span style="color:var(--text3);font-weight:400">— ${m.ville||''}</span></div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">${m.adresse||''}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:3px">CA Légumes: ${m.ca_legumes!=null?Math.round(m.ca_legumes).toLocaleString('fr-FR'):'—'} · CA Petits fruits: ${m.ca_petits_fruits!=null?Math.round(m.ca_petits_fruits).toLocaleString('fr-FR'):'—'}</div>
+      </div>
+      ${readOnly?'':`<button class="icon-btn" onclick="openMagasinModal('${m.id}')" title="Modifier"><i class="ti ti-edit"></i></button>
+      <button class="icon-btn danger" onclick="deleteMagasin('${m.id}')" title="Supprimer"><i class="ti ti-trash"></i></button>`}
+    </div>`).join('');
+}
+
+function renderMagasinsList(filter){
+  const el=document.getElementById('magasins-list');
+  if(!el)return;
+  if(isAdminNow()&&!magasinsTeamNames){loadMagasinsTeamNames().then(()=>renderMagasinsList(filter));}
+  const userSelect=magasinsUserSelectHtml();
+  const existing=document.getElementById('magasins-user-select-slot');
+  if(existing)existing.remove();
+  if(userSelect&&!document.getElementById('magasins-user-select-slot')){
+    el.insertAdjacentHTML('beforebegin',`<div id="magasins-user-select-slot">${userSelect}</div>`);
+  }
+  el.innerHTML=magasinsListRowsHtml(filter);
+}
+
+function renderMagasinsListDesktop(){
+  const el=document.querySelector('#desktop-content #magasins-list');
+  if(!el)return;
+  if(isAdminNow()&&!magasinsTeamNames){loadMagasinsTeamNames().then(()=>renderMagasinsListDesktop());}
+  const slot=document.querySelector('#desktop-content #magasins-user-select-slot');
+  const userSelect=magasinsUserSelectHtml();
+  if(slot)slot.outerHTML=userSelect?`<div id="magasins-user-select-slot">${userSelect}</div>`:'';
+  else if(userSelect)el.insertAdjacentHTML('beforebegin',`<div id="magasins-user-select-slot">${userSelect}</div>`);
+  el.innerHTML=magasinsListRowsHtml(document.querySelector('#desktop-content #magasins-search')?document.querySelector('#desktop-content #magasins-search').value:'');
+}
+
+function openMagasinModal(id){
+  const m=id?magasinsActiveList().find(x=>x.id===id):null;
+  const inS="width:100%;padding:8px;border:0.5px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px";
+  const el=document.getElementById('modal-content');
+  el.innerHTML=`
+    <h3 style="margin-bottom:12px">${m?'Modifier le magasin':'Nouveau magasin'}</h3>
+    <input type="hidden" id="mg-id" value="${m?m.id:''}">
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2)">Enseigne</label><input id="mg-enseigne" value="${m?(m.groupe_enseigne||'').replace(/"/g,'&quot;'):''}" placeholder="CARREFOUR" style="${inS}"></div>
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2)">Ville</label><input id="mg-ville" value="${m?(m.ville||'').replace(/"/g,'&quot;'):''}" placeholder="NICE" style="${inS}"></div>
+    </div>
+    <div style="margin-bottom:10px"><label style="font-size:12px;color:var(--text2)">Adresse</label><input id="mg-adresse" value="${m?(m.adresse||'').replace(/"/g,'&quot;'):''}" style="${inS}"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2)">CA Légumes</label><input type="number" step="0.01" id="mg-ca-legumes" value="${m&&m.ca_legumes!=null?m.ca_legumes:''}" style="${inS}"></div>
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2)">CA Petits fruits</label><input type="number" step="0.01" id="mg-ca-pf" value="${m&&m.ca_petits_fruits!=null?m.ca_petits_fruits:''}" style="${inS}"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2)">CA TF Hiver</label><input type="number" step="0.01" id="mg-ca-hiver" value="${m&&m.ca_tf_hiver!=null?m.ca_tf_hiver:''}" style="${inS}"></div>
+      <div style="flex:1"><label style="font-size:12px;color:var(--text2)">CA TF Été</label><input type="number" step="0.01" id="mg-ca-ete" value="${m&&m.ca_tf_ete!=null?m.ca_tf_ete:''}" style="${inS}"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" onclick="saveMagasin()" style="flex:1"><i class="ti ti-device-floppy"></i> Enregistrer</button>
+      <button class="btn-sm" onclick="closeModal()" style="background:var(--bg3);color:var(--text);border:0.5px solid var(--border)">Annuler</button>
+    </div>`;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+async function saveMagasin(){
+  const id=document.getElementById('mg-id').value||('m'+Date.now());
+  const enseigne=document.getElementById('mg-enseigne').value.trim();
+  const ville=document.getElementById('mg-ville').value.trim();
+  if(!enseigne&&!ville){alert('Indique au moins une enseigne ou une ville.');return;}
+  const num=v=>{const n=parseFloat(v);return isNaN(n)?null:n;};
+  const obj={
+    id,
+    user_id: (isAdminNow()&&magasinsSelectedUserId&&magasinsSelectedUserId!==currentUser.id)?magasinsSelectedUserId:currentUser.id,
+    groupe_enseigne: enseigne||null,
+    ville: ville||null,
+    adresse: document.getElementById('mg-adresse').value.trim()||null,
+    ca_legumes: num(document.getElementById('mg-ca-legumes').value),
+    ca_petits_fruits: num(document.getElementById('mg-ca-pf').value),
+    ca_tf_hiver: num(document.getElementById('mg-ca-hiver').value),
+    ca_tf_ete: num(document.getElementById('mg-ca-ete').value)
+  };
+  // Mise à jour locale optimiste
+  const idxAll=magasinsAllRaw.findIndex(x=>x.id===id);
+  if(idxAll>=0)magasinsAllRaw[idxAll]={...magasinsAllRaw[idxAll],...obj};else magasinsAllRaw.push(obj);
+  if(obj.user_id===currentUser.id){
+    const idx=magasins.findIndex(x=>x.id===id);
+    if(idx>=0)magasins[idx]=obj;else magasins.push(obj);
+  }
+  closeModal();
+  renderMagasinsList(document.getElementById('magasins-search')?document.getElementById('magasins-search').value:'');
+  if(desktopMode)renderMagasinsListDesktop();
+  setSyncStatus('syncing','Sauvegarde magasin…');
+  try{
+    const{error}=await sb.from('magasins').upsert([obj],{onConflict:'id'});
+    if(error)throw error;
+    setSyncStatus('ok','Synchronisé');
+  }catch(e){setSyncStatus('error','Magasin enregistré en local');}
+}
+
+async function deleteMagasin(id){
+  if(!confirm('Supprimer ce magasin ?'))return;
+  magasinsAllRaw=magasinsAllRaw.filter(m=>m.id!==id);
+  magasins=magasins.filter(m=>m.id!==id);
+  renderMagasinsList(document.getElementById('magasins-search')?document.getElementById('magasins-search').value:'');
+  if(desktopMode)renderMagasinsListDesktop();
+  try{await sb.from('magasins').delete().eq('id',id);}catch(e){}
 }
 
 // INIT
