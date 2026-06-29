@@ -159,6 +159,8 @@ canvas{display:block;margin:0 auto}
   .sidebar-nav-item:hover{background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.85)}
   .sidebar-nav-item.active{background:rgba(29,158,117,0.18);color:#1D9E75}
   .sidebar-nav-item i{font-size:18px;flex-shrink:0}
+  .bkp-act{background:var(--bg2);border:0.5px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:500;color:var(--text);font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+  .bkp-act:hover{background:var(--bg3)}
   .sidebar-footer{
     padding:14px 18px;border-top:0.5px solid rgba(255,255,255,0.08);
     display:flex;align-items:center;gap:8px
@@ -324,6 +326,9 @@ canvas{display:block;margin:0 auto}
     </button>
     <button class="sidebar-nav-item" id="snav-magasins" onclick="desktopTab('magasins')">
       <i class="ti ti-building-warehouse"></i> Magasins
+    </button>
+    <button class="sidebar-nav-item" id="snav-sauvegarde" style="display:none" onclick="desktopTab('sauvegarde')">
+      <i class="ti ti-database-export"></i> Sauvegarde
     </button>
     <button class="sidebar-nav-item" onclick="desktopNewReleve()" style="margin-top:8px;color:#1D9E75">
       <i class="ti ti-plus"></i> Nouveau relevé
@@ -619,6 +624,11 @@ function initDesktop(){
     const tabBtn = document.getElementById('tab-btn-equipe');
     if(tabBtn) tabBtn.style.display = '';
   }
+  // Sauvegarde : admin uniquement
+  if(isAdminNow()){
+    const sbk = document.getElementById('snav-sauvegarde');
+    if(sbk) sbk.style.display = '';
+  }
   // Magasins = onglet individuel (CS uniquement), pas pour le directeur
   if(currentProfile && currentProfile.role==='directeur'){
     const m1=document.getElementById('snav-magasins'); if(m1) m1.style.display='none';
@@ -643,12 +653,18 @@ function desktopTab(tab){
   const activeBtn = document.getElementById('snav-'+tab);
   if(activeBtn) activeBtn.classList.add('active');
   // Titre
-  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', magasins:'Magasins', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda', synthese:'Synthèse PA', phoning:'Phoning'};
+  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', magasins:'Magasins', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda', synthese:'Synthèse PA', phoning:'Phoning', sauvegarde:'Sauvegarde'};
   document.getElementById('desktop-topbar-title').textContent = titles[tab]||tab;
   document.getElementById('desktop-back-btn').style.display = 'none';
   // Rendu du contenu
   const content = document.getElementById('desktop-content');
   content.innerHTML = '';
+  if(tab==='sauvegarde'){
+    if(!isAdminNow()){ content.innerHTML = '<div style="padding:24px;color:var(--text2)">Accès réservé aux administrateurs.</div>'; return; }
+    content.innerHTML = '<div id="sauvegarde-content"></div>';
+    renderSauvegarde('sauvegarde-content');
+    return;
+  }
   if(tab==='dashboard'){
     content.innerHTML = '<div id="dashboard-content-desktop"></div>';
     renderDashboard('dashboard-content-desktop');
@@ -4617,6 +4633,130 @@ async function deleteMagasin(id){
   renderMagasinsList(document.getElementById('magasins-search')?document.getElementById('magasins-search').value:'');
   if(desktopMode)renderMagasinsListDesktop();
   try{await sb.from('magasins').delete().eq('id',id);}catch(e){}
+}
+
+// ===== Module Sauvegarde / Restauration (admin) =====
+const BKP_TABLES = ["profiles","produits","magasins","contacts","dn_config","assortiments","dn_theorique","jours_terrain","agenda","phoning","releves"];
+
+function bkpFmtSize(o){ if(o==null) return "—"; if(o<1024) return o+" o"; if(o<1048576) return (o/1024).toFixed(1)+" Ko"; return (o/1048576).toFixed(2)+" Mo"; }
+function bkpFmtDate(s){ try{ const d=new Date(s); return d.toLocaleDateString("fr-FR")+" à "+d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}); }catch(e){ return s; } }
+function bkpFlatten(rows){ return (rows||[]).map(r=>{ const o={}; for(const k in r){ const v=r[k]; o[k]=(v!==null && typeof v==="object") ? JSON.stringify(v) : v; } return o; }); }
+
+async function renderSauvegarde(containerId){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  el.innerHTML = `
+    <div style="max-width:920px">
+      <div style="background:var(--info-bg);color:var(--info-text);border-radius:var(--radius);padding:14px 16px;margin-bottom:18px;font-size:13px;line-height:1.55">
+        <strong>Sauvegarde automatique active.</strong> Une sauvegarde complète des données est effectuée chaque <strong>lundi en pleine nuit</strong> directement sur le serveur — aucun ordinateur à laisser allumé. Les 12 sauvegardes les plus récentes sont conservées.
+        <br>Remarque : les photos ne sont pas incluses (elles sont stockées uniquement sur l'appareil).
+      </div>
+      <button id="bkp-now-btn" class="btn" style="max-width:300px;background:var(--accent);color:#fff;border-color:var(--accent)" onclick="bkpDoBackup()">
+        <i class="ti ti-device-floppy"></i> Sauvegarder maintenant
+      </button>
+      <h3 style="font-size:14px;color:var(--text2);margin:22px 0 10px;font-weight:600">Sauvegardes disponibles</h3>
+      <div id="bkp-list"></div>
+    </div>`;
+  await bkpLoadList();
+}
+
+async function bkpLoadList(){
+  const zone = document.getElementById("bkp-list");
+  if(!zone) return;
+  zone.innerHTML = `<div style="color:var(--text2);padding:12px;font-size:13px">Chargement…</div>`;
+  const { data, error } = await sb.from("backups").select("id,created_at,type,taille,nb_lignes").order("created_at",{ascending:false});
+  if(error){ zone.innerHTML = `<div style="color:var(--danger-text);padding:12px;font-size:13px">Erreur de chargement : ${error.message}</div>`; return; }
+  if(!data || !data.length){ zone.innerHTML = `<div style="color:var(--text2);padding:12px;font-size:13px">Aucune sauvegarde pour le moment.</div>`; return; }
+  zone.innerHTML = data.map(b=>{
+    const badge = b.type==="auto"
+      ? `<span style="background:var(--success-bg);color:var(--success-text);font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px">auto</span>`
+      : `<span style="background:var(--info-bg);color:var(--info-text);font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px">manuel</span>`;
+    return `
+    <div style="background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:14px;font-weight:500;color:var(--text)">${bkpFmtDate(b.created_at)}${badge}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:3px">${b.nb_lignes==null?"—":b.nb_lignes+" lignes"} · ${bkpFmtSize(b.taille)}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="bkp-act" onclick="bkpExcel(${b.id})"><i class="ti ti-file-spreadsheet"></i> Excel</button>
+        <button class="bkp-act" onclick="bkpJson(${b.id})"><i class="ti ti-file-code"></i> JSON</button>
+        <button class="bkp-act" style="color:var(--warn-text)" onclick="bkpRestore(${b.id})"><i class="ti ti-history"></i> Restaurer</button>
+        <button class="bkp-act" style="color:var(--danger-text)" onclick="bkpDelete(${b.id})" title="Supprimer"><i class="ti ti-trash"></i></button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+async function bkpDoBackup(){
+  const btn = document.getElementById("bkp-now-btn");
+  if(btn){ btn.disabled=true; btn.innerHTML = `<i class="ti ti-loader-2"></i> Sauvegarde en cours…`; }
+  const { data, error } = await sb.rpc("create_backup",{ p_type:"manuel" });
+  if(btn){ btn.disabled=false; btn.innerHTML = `<i class="ti ti-device-floppy"></i> Sauvegarder maintenant`; }
+  if(error){ alert("Erreur lors de la sauvegarde : "+error.message); return; }
+  await bkpLoadList();
+}
+
+async function bkpFetchData(id){
+  const { data, error } = await sb.from("backups").select("data").eq("id",id).single();
+  if(error){ alert("Erreur : "+error.message); return null; }
+  return data ? data.data : null;
+}
+
+async function bkpExcel(id){
+  const d = await bkpFetchData(id);
+  if(!d) return;
+  const wb = XLSX.utils.book_new();
+  BKP_TABLES.forEach(t=>{
+    const rows = bkpFlatten(Array.isArray(d[t]) ? d[t] : []);
+    const ws = rows.length ? XLSX.utils.json_to_sheet(rows) : XLSX.utils.aoa_to_sheet([["(table vide)"]]);
+    XLSX.utils.book_append_sheet(wb, ws, t.slice(0,31));
+  });
+  XLSX.writeFile(wb, "norelia_sauvegarde_"+id+"_"+new Date().toISOString().slice(0,10)+".xlsx");
+}
+
+async function bkpJson(id){
+  const d = await bkpFetchData(id);
+  if(!d) return;
+  const blob = new Blob([JSON.stringify(d,null,2)],{type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "norelia_sauvegarde_"+id+".json"; a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function bkpRestore(id){
+  const rep = prompt(
+    "RESTAURATION de la sauvegarde #"+id+"\n\n"+
+    "Cette opération REMPLACE les données actuelles par celles de la sauvegarde.\n\n"+
+    "• Laissez le champ VIDE puis OK pour tout restaurer (les 11 tables).\n"+
+    "• OU tapez le nom d'une seule table à restaurer :\n"+
+    BKP_TABLES.join(", ")
+  );
+  if(rep===null) return;
+  const t = rep.trim();
+  if(t===""){
+    const c = prompt("Vous allez TOUT restaurer et écraser les données actuelles.\n\nPour confirmer, tapez : RESTAURER");
+    if(c!=="RESTAURER") return;
+    await bkpRunRestore(id, null);
+  } else {
+    if(!BKP_TABLES.includes(t)){ alert("Table inconnue : "+t); return; }
+    if(!confirm("Restaurer uniquement la table « "+t+" » ?\nLes données actuelles de cette table seront écrasées.")) return;
+    await bkpRunRestore(id, t);
+  }
+}
+
+async function bkpRunRestore(id, table){
+  const { data, error } = await sb.rpc("restore_backup", table ? { p_id:id, p_table:table } : { p_id:id });
+  if(error){ alert("Échec de la restauration : "+error.message); return; }
+  alert("Restauration effectuée"+(table ? (" (table "+table+")") : "")+".\nLa page va se recharger.");
+  location.reload();
+}
+
+async function bkpDelete(id){
+  if(!confirm("Supprimer définitivement la sauvegarde #"+id+" ?")) return;
+  const { error } = await sb.from("backups").delete().eq("id",id);
+  if(error){ alert("Erreur : "+error.message); return; }
+  await bkpLoadList();
 }
 
 // INIT
