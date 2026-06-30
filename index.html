@@ -312,6 +312,15 @@ canvas{display:block;margin:0 auto}
     <button class="sidebar-nav-item active" id="snav-releves" onclick="desktopTab('releves')">
       <i class="ti ti-clipboard-list"></i> Relevés
     </button>
+    <button class="sidebar-nav-item" id="snav-rnc" onclick="desktopTab('rnc')" style="padding-left:30px;font-size:13px">
+      <i class="ti ti-map-pin-off"></i> Mag. non couverts
+    </button>
+    <button class="sidebar-nav-item" id="snav-pahm" onclick="desktopTab('pahm')" style="padding-left:30px;font-size:13px">
+      <i class="ti ti-receipt"></i> PA hors magasin
+    </button>
+    <button class="sidebar-nav-item" id="snav-gf" onclick="desktopTab('gf')" style="padding-left:30px;font-size:13px">
+      <i class="ti ti-apple"></i> Gros Fruits
+    </button>
     <button class="sidebar-nav-item" id="snav-equipe" style="display:none" onclick="desktopTab('equipe')">
       <i class="ti ti-users"></i> Équipe
     </button>
@@ -591,6 +600,11 @@ const DEFAULT_PRODUCTS=[
 ];
 
 let products=[];
+let relevesNC=[];      // Relevés magasins non couverts
+let relevesPAHM=[];    // PA hors magasin
+let relevesGF=[];      // Relevé Gros Fruits
+let gfReferentiel=[];  // Référentiel administrable Gros Fruits
+let currentNC=null, currentPAHM=null, currentGF=null;
 let releves=[];
 let centrales=[];
 let magasins=[];
@@ -653,7 +667,7 @@ function desktopTab(tab){
   const activeBtn = document.getElementById('snav-'+tab);
   if(activeBtn) activeBtn.classList.add('active');
   // Titre
-  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', magasins:'Magasins', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda', synthese:'Synthèse PA', phoning:'Phoning', sauvegarde:'Sauvegarde'};
+  const titles = {releves:'Relevés', equipe:'Équipe', enseignes:'Enseignes', catalogue:'Catalogue', centrales:'Centrales', magasins:'Magasins', dashboard:'Dashboard DN', clients:'Clients', activite:'Activité équipe', agenda:'Agenda', synthese:'Synthèse PA', phoning:'Phoning', sauvegarde:'Sauvegarde', rnc:'Magasins non couverts', pahm:'PA hors magasin', gf:'Relevé Gros Fruits'};
   document.getElementById('desktop-topbar-title').textContent = titles[tab]||tab;
   document.getElementById('desktop-back-btn').style.display = 'none';
   // Rendu du contenu
@@ -693,6 +707,21 @@ function desktopTab(tab){
   if(tab==='phoning'){
     content.innerHTML = '<div id="phoning-content-desktop"></div>';
     renderPhoning('phoning-content-desktop');
+    return;
+  }
+  if(tab==='rnc'){
+    content.innerHTML = '<div id="rnc-content-desktop"></div>';
+    renderRNC('rnc-content-desktop');
+    return;
+  }
+  if(tab==='pahm'){
+    content.innerHTML = '<div id="pahm-content-desktop"></div>';
+    renderPAHM('pahm-content-desktop');
+    return;
+  }
+  if(tab==='gf'){
+    content.innerHTML = '<div id="gf-content-desktop"></div>';
+    renderGF('gf-content-desktop');
     return;
   }
   // Récupère le contenu de l'onglet mobile et le clone dans desktop-content
@@ -990,6 +1019,579 @@ function desktopGoBack(){
   document.getElementById('desktop-back-btn').style.display = 'none';
 }
 
+// ============================================================
+// RELEVÉS MAGASINS NON COUVERTS / PA HORS MAGASIN / GROS FRUITS
+// ============================================================
+function nowDateStr(){return new Date().toLocaleDateString('fr-FR');}
+
+// ---- Autocomplete magasin générique (réutilisable par les 3 modules) ----
+function genericFilterMagasins(inputId, dropdownId, val, onSelect){
+  const dd=document.getElementById(dropdownId);
+  if(!dd)return;
+  if(!val||val.length<2){dd.style.display='none';return;}
+  const q=val.toLowerCase();
+  const matches=magasins.filter(m=>(m.ville&&m.ville.toLowerCase().includes(q))||(m.groupe_enseigne&&m.groupe_enseigne.toLowerCase().includes(q))).slice(0,8);
+  if(!matches.length){dd.style.display='none';return;}
+  dd.innerHTML=matches.map(m=>`<div onclick='${onSelect}("${m.id}")' style="padding:10px 12px;cursor:pointer;border-bottom:0.5px solid var(--border);font-size:13px" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''">
+    <strong>${m.groupe_enseigne}</strong> — ${m.ville}
+    <div style="font-size:11px;color:var(--text2)">${m.adresse||''}</div>
+  </div>`).join('');
+  dd.style.display='block';
+}
+document.addEventListener('click',e=>{
+  ['rnc-magasin-dropdown','pahm-magasin-dropdown','gf-magasin-dropdown'].forEach(id=>{
+    const dd=document.getElementById(id);
+    if(dd && !e.target.closest('#'+id) && !e.target.matches('[data-magasin-input]')) dd.style.display='none';
+  });
+});
+
+// ============================================================
+// 1) RELEVÉS MAGASINS NON COUVERTS
+// ============================================================
+function renderRNC(targetId){
+  const el=document.getElementById(targetId);
+  if(!el)return;
+  el.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <p style="font-size:13px;color:var(--text2);margin:0">Photo de l'assortiment type dans un magasin hors de votre portefeuille (réfs, prix, fournisseur, TCA/TCM).</p>
+      <button class="btn btn-primary" onclick="openNewRNC()"><i class="ti ti-plus"></i> Nouveau relevé</button>
+    </div>
+    <div class="card" id="rnc-list"></div>`;
+  renderRNCList();
+}
+function renderRNCList(){
+  const el=document.getElementById('rnc-list');
+  if(!el)return;
+  if(!relevesNC.length){el.innerHTML='<div class="empty"><i class="ti ti-map-pin-off"></i>Aucun relevé pour l\'instant.</div>';return;}
+  const sorted=[...relevesNC].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.created_at||'').localeCompare(a.created_at||''));
+  el.innerHTML=sorted.map(r=>`
+    <div class="releve-card" style="cursor:pointer">
+      ${getEnseigneAvatar(r.enseigne,40)}
+      <div class="releve-info" onclick="openEditRNC('${r.id}')">
+        <div class="releve-name">${r.enseigne||''} — ${r.magasin||''}</div>
+        <div class="releve-sub">${r.date||''}${r.centrale?' · '+r.centrale:''} · ${(r.results||[]).length} réf.</div>
+      </div>
+      <div class="releve-actions">
+        <button class="icon-btn" onclick="event.stopPropagation();openEditRNC('${r.id}')" title="Modifier"><i class="ti ti-edit"></i></button>
+        <button class="icon-btn danger" onclick="event.stopPropagation();deleteRNC('${r.id}')" title="Supprimer"><i class="ti ti-trash"></i></button>
+      </div>
+    </div>`).join('');
+}
+function openNewRNC(){
+  currentNC={id:'rnc'+Date.now(),user_id:currentUser.id,enseigne:'',centrale:'',magasin:'',magasin_id:null,typologie:'',type:'TCA',date:nowDateStr(),commentaire:'',results:[]};
+  renderRNCForm();
+}
+function openEditRNC(id){
+  const r=relevesNC.find(x=>x.id===id);
+  if(!r)return;
+  currentNC=JSON.parse(JSON.stringify(r));
+  renderRNCForm();
+}
+function renderRNCForm(){
+  const content=document.getElementById('desktop-content');
+  document.getElementById('desktop-back-btn').style.display='';
+  desktopBackTarget='rnc';
+  document.getElementById('desktop-topbar-title').textContent=currentNC.results&&currentNC.results.length&&relevesNC.find(r=>r.id===currentNC.id)?'Modifier le relevé':'Nouveau relevé — Magasin non couvert';
+  content.innerHTML=`
+    <div class="card card-inner">
+      <div class="form-row">
+        <div class="form-group"><label>Enseigne *</label>
+          <select id="rnc-enseigne" onchange="rncUpdateCentrales()">
+            <option value="">-- Choisir --</option>
+            <option>Intermarché</option><option>Carrefour</option><option>Carrefour Market</option>
+            <option>Leclerc</option><option>Auchan</option><option>Super U</option><option>Hyper U</option>
+            <option>Lidl</option><option>Grand Frais</option><option>Aldi</option><option>Autre</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Centrale</label>
+          <select id="rnc-centrale"><option value="">-- Toutes --</option></select>
+        </div>
+      </div>
+      <div class="form-group" style="position:relative"><label>Ville / Magasin *</label>
+        <input type="text" id="rnc-magasin" data-magasin-input placeholder="ex: Saint Raphaël..." autocomplete="off"
+          oninput="genericFilterMagasins('rnc-magasin','rnc-magasin-dropdown',this.value,'rncSelectMagasin')"
+          onfocus="genericFilterMagasins('rnc-magasin','rnc-magasin-dropdown',this.value,'rncSelectMagasin')">
+        <div id="rnc-magasin-dropdown" style="display:none;position:absolute;z-index:50;background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius);max-height:200px;overflow-y:auto;width:100%;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Type de rayon</label>
+          <select id="rnc-type"><option>TCA</option><option>TCM</option><option>Tcgrappe</option><option>TCR</option><option>Autre</option></select>
+        </div>
+        <div class="form-group"><label>Date</label><input type="text" id="rnc-date" value="${currentNC.date||nowDateStr()}"></div>
+      </div>
+      <div class="form-group"><label>Typologie magasin</label>
+        <select id="rnc-typologie">
+          <option value="">-- Choisir --</option>
+          <option>HM</option><option>SM</option><option>Drive</option><option>Spécialiste</option><option>Discounter</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Commentaire / compte-rendu</label>
+        <textarea id="rnc-commentaire" rows="3" style="width:100%;padding:10px;border:0.5px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:14px">${currentNC.commentaire||''}</textarea>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:18px 0 10px">
+      <span class="section-label" style="margin:0">Références relevées</span>
+      <button class="btn btn-sm" onclick="rncAddLine()"><i class="ti ti-plus"></i> Référence</button>
+    </div>
+    <div class="card" id="rnc-lines"></div>
+    <div style="height:30px"></div>
+    <div class="sticky-bar"><button class="btn btn-primary" onclick="saveRNC()"><i class="ti ti-device-floppy"></i> Enregistrer</button></div>
+  `;
+  document.getElementById('rnc-enseigne').value=currentNC.enseigne||'';
+  rncUpdateCentrales();
+  document.getElementById('rnc-centrale').value=currentNC.centrale||'';
+  document.getElementById('rnc-magasin').value=currentNC.magasin||'';
+  document.getElementById('rnc-type').value=currentNC.type||'TCA';
+  document.getElementById('rnc-typologie').value=currentNC.typologie||'';
+  renderRNCLines();
+  document.querySelectorAll('.sidebar-nav-item').forEach(elx=>elx.classList.remove('active'));
+}
+function rncUpdateCentrales(){
+  const enseigne=normEnseigne(document.getElementById('rnc-enseigne').value);
+  const sel=document.getElementById('rnc-centrale');
+  const filtered=centrales.filter(c=>normEnseigne(c.enseigne)===enseigne);
+  sel.innerHTML='<option value="">-- Toutes --</option>'+filtered.map(c=>`<option value="${c.nom}">${c.nom}</option>`).join('');
+}
+function rncSelectMagasin(id){
+  const m=magasins.find(x=>x.id===id);if(!m)return;
+  document.getElementById('rnc-magasin').value=m.groupe_enseigne+' '+m.ville;
+  document.getElementById('rnc-magasin-dropdown').style.display='none';
+  document.getElementById('rnc-magasin').dataset.magasinId=id;
+}
+function rncAddLine(){
+  if(!currentNC.results)currentNC.results=[];
+  currentNC.results.push({mn_mdd:'MN',marque:'',format:'',origine:'',prix_uvc:null,facing:null,pa_ht:null,vmh:null,fournisseur:''});
+  renderRNCLines();
+}
+function rncRemoveLine(idx){currentNC.results.splice(idx,1);renderRNCLines();}
+function renderRNCLines(){
+  const el=document.getElementById('rnc-lines');
+  if(!el)return;
+  if(!currentNC.results||!currentNC.results.length){el.innerHTML='<div class="empty">Aucune référence — cliquez sur "Référence" pour en ajouter.</div>';return;}
+  el.innerHTML=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr style="text-align:left;color:var(--text3);font-size:11px;text-transform:uppercase">
+      <th style="padding:6px">MN/MDD</th><th style="padding:6px">Marque</th><th style="padding:6px">Format</th>
+      <th style="padding:6px">Origine</th><th style="padding:6px">Prix UVC</th><th style="padding:6px">Facing</th>
+      <th style="padding:6px">PA HT</th><th style="padding:6px">VMH</th><th style="padding:6px">Fournisseur</th><th></th>
+    </tr></thead><tbody>
+    ${currentNC.results.map((l,i)=>`<tr style="border-top:0.5px solid var(--border)">
+      <td style="padding:4px"><select onchange="currentNC.results[${i}].mn_mdd=this.value" style="width:70px">
+        <option ${l.mn_mdd==='MN'?'selected':''}>MN</option><option ${l.mn_mdd==='MDD'?'selected':''}>MDD</option></select></td>
+      <td style="padding:4px"><input value="${l.marque||''}" oninput="currentNC.results[${i}].marque=this.value" style="width:110px"></td>
+      <td style="padding:4px"><input value="${l.format||''}" oninput="currentNC.results[${i}].format=this.value" style="width:70px"></td>
+      <td style="padding:4px"><input value="${l.origine||''}" oninput="currentNC.results[${i}].origine=this.value" style="width:100px"></td>
+      <td style="padding:4px"><input type="number" step="0.01" value="${l.prix_uvc??''}" oninput="currentNC.results[${i}].prix_uvc=parseFloat(this.value)||null" style="width:70px"></td>
+      <td style="padding:4px"><input type="number" value="${l.facing??''}" oninput="currentNC.results[${i}].facing=parseInt(this.value)||null" style="width:55px"></td>
+      <td style="padding:4px"><input type="number" step="0.01" value="${l.pa_ht??''}" oninput="currentNC.results[${i}].pa_ht=parseFloat(this.value)||null" style="width:70px"></td>
+      <td style="padding:4px"><input type="number" step="0.01" value="${l.vmh??''}" oninput="currentNC.results[${i}].vmh=parseFloat(this.value)||null" style="width:65px"></td>
+      <td style="padding:4px"><input value="${l.fournisseur||''}" oninput="currentNC.results[${i}].fournisseur=this.value" style="width:100px"></td>
+      <td style="padding:4px"><button class="icon-btn danger" onclick="rncRemoveLine(${i})"><i class="ti ti-trash"></i></button></td>
+    </tr>`).join('')}
+    </tbody></table></div>`;
+  el.querySelectorAll('input,select').forEach(i=>{i.style.cssText+=';padding:6px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12px';});
+}
+async function saveRNC(){
+  currentNC.enseigne=document.getElementById('rnc-enseigne').value;
+  currentNC.centrale=document.getElementById('rnc-centrale').value;
+  currentNC.magasin=document.getElementById('rnc-magasin').value.trim();
+  currentNC.magasin_id=document.getElementById('rnc-magasin').dataset.magasinId||currentNC.magasin_id||null;
+  currentNC.type=document.getElementById('rnc-type').value;
+  currentNC.date=document.getElementById('rnc-date').value.trim()||nowDateStr();
+  currentNC.typologie=document.getElementById('rnc-typologie').value;
+  currentNC.commentaire=document.getElementById('rnc-commentaire').value.trim();
+  if(!currentNC.enseigne||!currentNC.magasin){alert('Enseigne et magasin sont obligatoires.');return;}
+  const idx=relevesNC.findIndex(r=>r.id===currentNC.id);
+  if(idx>-1)relevesNC[idx]=currentNC;else relevesNC.push(currentNC);
+  saveLocal();
+  enqueueSync('releves_non_couverts','upsert',currentNC,currentNC.id);
+  desktopTab('rnc');
+}
+async function deleteRNC(id){
+  if(!confirm('Supprimer ce relevé ?'))return;
+  relevesNC=relevesNC.filter(r=>r.id!==id);
+  saveLocal();
+  enqueueSync('releves_non_couverts','delete',null,id);
+  renderRNCList();
+}
+
+// ============================================================
+// 2) PA HORS MAGASIN
+// ============================================================
+function renderPAHM(targetId){
+  const el=document.getElementById(targetId);
+  if(!el)return;
+  el.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <p style="font-size:13px;color:var(--text2);margin:0">Prix d'achat capturés chez des clients ayant accès à cette donnée, même sur des références qui ne sont pas en rayon.</p>
+      <button class="btn btn-primary" onclick="openNewPAHM()"><i class="ti ti-plus"></i> Nouveau relevé</button>
+    </div>
+    <div class="card" id="pahm-list"></div>`;
+  renderPAHMList();
+}
+function renderPAHMList(){
+  const el=document.getElementById('pahm-list');
+  if(!el)return;
+  if(!relevesPAHM.length){el.innerHTML='<div class="empty"><i class="ti ti-receipt"></i>Aucun relevé pour l\'instant.</div>';return;}
+  const sorted=[...relevesPAHM].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.created_at||'').localeCompare(a.created_at||''));
+  el.innerHTML=sorted.map(r=>`
+    <div class="releve-card" style="cursor:pointer">
+      ${getEnseigneAvatar(r.enseigne,40)}
+      <div class="releve-info" onclick="openEditPAHM('${r.id}')">
+        <div class="releve-name">${r.enseigne||''} — ${r.magasin||''}</div>
+        <div class="releve-sub">${r.date||''}${r.centrale?' · '+r.centrale:''} · ${(r.results||[]).length} réf.</div>
+      </div>
+      <div class="releve-actions">
+        <button class="icon-btn" onclick="event.stopPropagation();openEditPAHM('${r.id}')" title="Modifier"><i class="ti ti-edit"></i></button>
+        <button class="icon-btn danger" onclick="event.stopPropagation();deletePAHM('${r.id}')" title="Supprimer"><i class="ti ti-trash"></i></button>
+      </div>
+    </div>`).join('');
+}
+function openNewPAHM(){
+  currentPAHM={id:'pahm'+Date.now(),user_id:currentUser.id,enseigne:'',centrale:'',magasin:'',magasin_id:null,date:nowDateStr(),commentaire:'',results:[]};
+  renderPAHMForm();
+}
+function openEditPAHM(id){
+  const r=relevesPAHM.find(x=>x.id===id);
+  if(!r)return;
+  currentPAHM=JSON.parse(JSON.stringify(r));
+  renderPAHMForm();
+}
+function renderPAHMForm(){
+  const content=document.getElementById('desktop-content');
+  document.getElementById('desktop-back-btn').style.display='';
+  desktopBackTarget='pahm';
+  document.getElementById('desktop-topbar-title').textContent='PA hors magasin';
+  content.innerHTML=`
+    <div class="card card-inner">
+      <div class="form-row">
+        <div class="form-group"><label>Enseigne *</label>
+          <select id="pahm-enseigne" onchange="pahmUpdateCentrales()">
+            <option value="">-- Choisir --</option>
+            <option>Intermarché</option><option>Carrefour</option><option>Carrefour Market</option>
+            <option>Leclerc</option><option>Auchan</option><option>Super U</option><option>Hyper U</option><option>Autre</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Centrale</label>
+          <select id="pahm-centrale"><option value="">-- Toutes --</option></select>
+        </div>
+      </div>
+      <div class="form-group" style="position:relative"><label>Ville / Magasin / Client *</label>
+        <input type="text" id="pahm-magasin" data-magasin-input placeholder="ex: Nice..." autocomplete="off"
+          oninput="genericFilterMagasins('pahm-magasin','pahm-magasin-dropdown',this.value,'pahmSelectMagasin')"
+          onfocus="genericFilterMagasins('pahm-magasin','pahm-magasin-dropdown',this.value,'pahmSelectMagasin')">
+        <div id="pahm-magasin-dropdown" style="display:none;position:absolute;z-index:50;background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius);max-height:200px;overflow-y:auto;width:100%;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+      </div>
+      <div class="form-group"><label>Date</label><input type="text" id="pahm-date" value="${currentPAHM.date||nowDateStr()}"></div>
+      <div class="form-group"><label>Commentaire</label>
+        <textarea id="pahm-commentaire" rows="2" style="width:100%;padding:10px;border:0.5px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:14px">${currentPAHM.commentaire||''}</textarea>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:18px 0 10px">
+      <span class="section-label" style="margin:0">Prix d'achat relevés</span>
+      <button class="btn btn-sm" onclick="pahmAddLine()"><i class="ti ti-plus"></i> Référence</button>
+    </div>
+    <div class="card" id="pahm-lines"></div>
+    <div style="height:30px"></div>
+    <div class="sticky-bar"><button class="btn btn-primary" onclick="savePAHM()"><i class="ti ti-device-floppy"></i> Enregistrer</button></div>
+  `;
+  document.getElementById('pahm-enseigne').value=currentPAHM.enseigne||'';
+  pahmUpdateCentrales();
+  document.getElementById('pahm-centrale').value=currentPAHM.centrale||'';
+  document.getElementById('pahm-magasin').value=currentPAHM.magasin||'';
+  renderPAHMLines();
+}
+function pahmUpdateCentrales(){
+  const enseigne=normEnseigne(document.getElementById('pahm-enseigne').value);
+  const sel=document.getElementById('pahm-centrale');
+  const filtered=centrales.filter(c=>normEnseigne(c.enseigne)===enseigne);
+  sel.innerHTML='<option value="">-- Toutes --</option>'+filtered.map(c=>`<option value="${c.nom}">${c.nom}</option>`).join('');
+}
+function pahmSelectMagasin(id){
+  const m=magasins.find(x=>x.id===id);if(!m)return;
+  document.getElementById('pahm-magasin').value=m.groupe_enseigne+' '+m.ville;
+  document.getElementById('pahm-magasin-dropdown').style.display='none';
+  document.getElementById('pahm-magasin').dataset.magasinId=id;
+}
+function pahmAddLine(){
+  if(!currentPAHM.results)currentPAHM.results=[];
+  currentPAHM.results.push({mn_mdd:'MN',marque:'',format:'',origine:'',pa_ht:null});
+  renderPAHMLines();
+}
+function pahmRemoveLine(idx){currentPAHM.results.splice(idx,1);renderPAHMLines();}
+function renderPAHMLines(){
+  const el=document.getElementById('pahm-lines');
+  if(!el)return;
+  if(!currentPAHM.results||!currentPAHM.results.length){el.innerHTML='<div class="empty">Aucune référence — cliquez sur "Référence" pour en ajouter.</div>';return;}
+  el.innerHTML=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr style="text-align:left;color:var(--text3);font-size:11px;text-transform:uppercase">
+      <th style="padding:6px">MN/MDD</th><th style="padding:6px">Marque</th><th style="padding:6px">Format</th>
+      <th style="padding:6px">Origine</th><th style="padding:6px">PA HT</th><th></th>
+    </tr></thead><tbody>
+    ${currentPAHM.results.map((l,i)=>`<tr style="border-top:0.5px solid var(--border)">
+      <td style="padding:4px"><select onchange="currentPAHM.results[${i}].mn_mdd=this.value" style="width:70px">
+        <option ${l.mn_mdd==='MN'?'selected':''}>MN</option><option ${l.mn_mdd==='MDD'?'selected':''}>MDD</option></select></td>
+      <td style="padding:4px"><input value="${l.marque||''}" oninput="currentPAHM.results[${i}].marque=this.value" style="width:120px"></td>
+      <td style="padding:4px"><input value="${l.format||''}" oninput="currentPAHM.results[${i}].format=this.value" style="width:80px"></td>
+      <td style="padding:4px"><input value="${l.origine||''}" oninput="currentPAHM.results[${i}].origine=this.value" style="width:110px"></td>
+      <td style="padding:4px"><input type="number" step="0.01" value="${l.pa_ht??''}" oninput="currentPAHM.results[${i}].pa_ht=parseFloat(this.value)||null" style="width:80px"></td>
+      <td style="padding:4px"><button class="icon-btn danger" onclick="pahmRemoveLine(${i})"><i class="ti ti-trash"></i></button></td>
+    </tr>`).join('')}
+    </tbody></table></div>`;
+  el.querySelectorAll('input,select').forEach(i=>{i.style.cssText+=';padding:6px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12px';});
+}
+async function savePAHM(){
+  currentPAHM.enseigne=document.getElementById('pahm-enseigne').value;
+  currentPAHM.centrale=document.getElementById('pahm-centrale').value;
+  currentPAHM.magasin=document.getElementById('pahm-magasin').value.trim();
+  currentPAHM.magasin_id=document.getElementById('pahm-magasin').dataset.magasinId||currentPAHM.magasin_id||null;
+  currentPAHM.date=document.getElementById('pahm-date').value.trim()||nowDateStr();
+  currentPAHM.commentaire=document.getElementById('pahm-commentaire').value.trim();
+  if(!currentPAHM.enseigne||!currentPAHM.magasin){alert('Enseigne et magasin sont obligatoires.');return;}
+  const idx=relevesPAHM.findIndex(r=>r.id===currentPAHM.id);
+  if(idx>-1)relevesPAHM[idx]=currentPAHM;else relevesPAHM.push(currentPAHM);
+  saveLocal();
+  enqueueSync('releves_pa_hors_mag','upsert',currentPAHM,currentPAHM.id);
+  desktopTab('pahm');
+}
+async function deletePAHM(id){
+  if(!confirm('Supprimer ce relevé ?'))return;
+  relevesPAHM=relevesPAHM.filter(r=>r.id!==id);
+  saveLocal();
+  enqueueSync('releves_pa_hors_mag','delete',null,id);
+  renderPAHMList();
+}
+
+// ============================================================
+// 3) RELEVÉ GROS FRUITS (avec référentiel administrable)
+// ============================================================
+function gfRefByType(type){return gfReferentiel.filter(r=>r.type===type).map(r=>r.valeur);}
+function renderGF(targetId){
+  const el=document.getElementById(targetId);
+  if(!el)return;
+  el.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:8px">
+      <p style="font-size:13px;color:var(--text2);margin:0">Relevé fruits & légumes (gros fruits) : format, marque, magasin, VMH et PA.</p>
+      <div style="display:flex;gap:8px">
+        ${isAdminNow()?'<button class="btn btn-sm" onclick="openGFReferentiel()"><i class="ti ti-settings"></i> Référentiel</button>':''}
+        <button class="btn btn-primary" onclick="openNewGF()"><i class="ti ti-plus"></i> Nouveau relevé</button>
+      </div>
+    </div>
+    <div class="card" id="gf-list"></div>`;
+  renderGFList();
+}
+function renderGFList(){
+  const el=document.getElementById('gf-list');
+  if(!el)return;
+  if(!relevesGF.length){el.innerHTML='<div class="empty"><i class="ti ti-apple"></i>Aucun relevé pour l\'instant.</div>';return;}
+  const sorted=[...relevesGF].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.created_at||'').localeCompare(a.created_at||''));
+  el.innerHTML=sorted.map(r=>`
+    <div class="releve-card" style="cursor:pointer">
+      ${getEnseigneAvatar(r.enseigne,40)}
+      <div class="releve-info" onclick="openEditGF('${r.id}')">
+        <div class="releve-name">${r.enseigne||''} — ${r.magasin||''}</div>
+        <div class="releve-sub">${r.date||''}${r.centrale?' · '+r.centrale:''} · ${(r.results||[]).length} réf.</div>
+      </div>
+      <div class="releve-actions">
+        <button class="icon-btn" onclick="event.stopPropagation();openEditGF('${r.id}')" title="Modifier"><i class="ti ti-edit"></i></button>
+        <button class="icon-btn danger" onclick="event.stopPropagation();deleteGF('${r.id}')" title="Supprimer"><i class="ti ti-trash"></i></button>
+      </div>
+    </div>`).join('');
+}
+function openNewGF(){
+  currentGF={id:'gf'+Date.now(),user_id:currentUser.id,enseigne:'',centrale:'',centrale2:'',magasin:'',magasin_id:null,typologie:'',drive:false,date:nowDateStr(),commentaire:'',results:[]};
+  renderGFForm();
+}
+function openEditGF(id){
+  const r=relevesGF.find(x=>x.id===id);
+  if(!r)return;
+  currentGF=JSON.parse(JSON.stringify(r));
+  renderGFForm();
+}
+function renderGFForm(){
+  const content=document.getElementById('desktop-content');
+  document.getElementById('desktop-back-btn').style.display='';
+  desktopBackTarget='gf';
+  document.getElementById('desktop-topbar-title').textContent='Relevé Gros Fruits';
+  content.innerHTML=`
+    <div class="card card-inner">
+      <div class="form-row">
+        <div class="form-group"><label>Enseigne *</label>
+          <select id="gf-enseigne" onchange="gfUpdateCentrales()">
+            <option value="">-- Choisir --</option>
+            <option>Intermarché</option><option>Carrefour</option><option>Carrefour Market</option>
+            <option>Leclerc</option><option>Auchan</option><option>Super U</option><option>Hyper U</option>
+            <option>Lidl</option><option>Grand Frais</option><option>Aldi</option><option>Autre</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Centrale régionale</label>
+          <select id="gf-centrale"><option value="">-- Toutes --</option></select>
+        </div>
+      </div>
+      <div class="form-group"><label>Centrale régionale 2</label><input type="text" id="gf-centrale2" value="${currentGF.centrale2||''}"></div>
+      <div class="form-group" style="position:relative"><label>Ville / Magasin (listing Circana) *</label>
+        <input type="text" id="gf-magasin" data-magasin-input placeholder="ex: ITM Juvignac..." autocomplete="off"
+          oninput="genericFilterMagasins('gf-magasin','gf-magasin-dropdown',this.value,'gfSelectMagasin')"
+          onfocus="genericFilterMagasins('gf-magasin','gf-magasin-dropdown',this.value,'gfSelectMagasin')">
+        <div id="gf-magasin-dropdown" style="display:none;position:absolute;z-index:50;background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius);max-height:200px;overflow-y:auto;width:100%;box-shadow:0 4px 12px rgba(0,0,0,0.12)"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Typologie magasin</label>
+          <select id="gf-typologie">
+            <option value="">-- Choisir --</option>
+            <option>HM</option><option>SM</option><option>Drive</option><option>Spécialiste</option><option>Discounter</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Date</label><input type="text" id="gf-date" value="${currentGF.date||nowDateStr()}"></div>
+      </div>
+      <div class="form-group"><label>Drive</label>
+        <select id="gf-drive"><option value="false">Pas Drive</option><option value="true">Drive</option></select>
+      </div>
+      <div class="form-group"><label>Commentaire</label>
+        <textarea id="gf-commentaire" rows="2" style="width:100%;padding:10px;border:0.5px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font-size:14px">${currentGF.commentaire||''}</textarea>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:18px 0 10px">
+      <span class="section-label" style="margin:0">Références relevées</span>
+      <button class="btn btn-sm" onclick="gfAddLine()"><i class="ti ti-plus"></i> Référence</button>
+    </div>
+    <div class="card" id="gf-lines"></div>
+    <div style="height:30px"></div>
+    <div class="sticky-bar"><button class="btn btn-primary" onclick="saveGF()"><i class="ti ti-device-floppy"></i> Enregistrer</button></div>
+  `;
+  document.getElementById('gf-enseigne').value=currentGF.enseigne||'';
+  gfUpdateCentrales();
+  document.getElementById('gf-centrale').value=currentGF.centrale||'';
+  document.getElementById('gf-magasin').value=currentGF.magasin||'';
+  document.getElementById('gf-typologie').value=currentGF.typologie||'';
+  document.getElementById('gf-drive').value=currentGF.drive?'true':'false';
+  renderGFLines();
+}
+function gfUpdateCentrales(){
+  const enseigne=normEnseigne(document.getElementById('gf-enseigne').value);
+  const sel=document.getElementById('gf-centrale');
+  const filtered=centrales.filter(c=>normEnseigne(c.enseigne)===enseigne);
+  sel.innerHTML='<option value="">-- Toutes --</option>'+filtered.map(c=>`<option value="${c.nom}">${c.nom}</option>`).join('');
+}
+function gfSelectMagasin(id){
+  const m=magasins.find(x=>x.id===id);if(!m)return;
+  document.getElementById('gf-magasin').value=m.groupe_enseigne+' '+m.ville;
+  document.getElementById('gf-magasin-dropdown').style.display='none';
+  document.getElementById('gf-magasin').dataset.magasinId=id;
+}
+function gfAddLine(){
+  if(!currentGF.results)currentGF.results=[];
+  currentGF.results.push({nomenclature:'',type_marque:'MN',marque:'',type_produit:'Poids fixe',format:'',origine:'',pa_ht:null,pvc_uc:null,pvc_kg:null,vmh:null,ca_hebdo:null});
+  renderGFLines();
+}
+function gfRemoveLine(idx){currentGF.results.splice(idx,1);renderGFLines();}
+function gfLineOptions(list,selected){
+  return '<option value=""></option>'+list.map(v=>`<option ${v===selected?'selected':''}>${v}</option>`).join('');
+}
+function renderGFLines(){
+  const el=document.getElementById('gf-lines');
+  if(!el)return;
+  const noms=gfRefByType('nomenclature'), tms=gfRefByType('type_marque'), marques=gfRefByType('marque'), tps=gfRefByType('type_produit');
+  if(!currentGF.results||!currentGF.results.length){el.innerHTML='<div class="empty">Aucune référence — cliquez sur "Référence" pour en ajouter.</div>';return;}
+  el.innerHTML=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr style="text-align:left;color:var(--text3);font-size:11px;text-transform:uppercase">
+      <th style="padding:6px">Nomenclature</th><th style="padding:6px">Type marque</th><th style="padding:6px">Marque</th>
+      <th style="padding:6px">Type produit</th><th style="padding:6px">Format</th><th style="padding:6px">Origine</th>
+      <th style="padding:6px">PA HT</th><th style="padding:6px">PVC UC</th><th style="padding:6px">PVC/kg</th>
+      <th style="padding:6px">VMH</th><th style="padding:6px">CA hebdo</th><th></th>
+    </tr></thead><tbody>
+    ${currentGF.results.map((l,i)=>`<tr style="border-top:0.5px solid var(--border)">
+      <td style="padding:4px"><select onchange="currentGF.results[${i}].nomenclature=this.value" style="width:140px">${gfLineOptions(noms,l.nomenclature)}</select></td>
+      <td style="padding:4px"><select onchange="currentGF.results[${i}].type_marque=this.value" style="width:80px">${gfLineOptions(tms,l.type_marque)}</select></td>
+      <td style="padding:4px"><select onchange="currentGF.results[${i}].marque=this.value" style="width:130px">${gfLineOptions(marques,l.marque)}</select></td>
+      <td style="padding:4px"><select onchange="currentGF.results[${i}].type_produit=this.value" style="width:110px">${gfLineOptions(tps,l.type_produit)}</select></td>
+      <td style="padding:4px"><input value="${l.format||''}" oninput="currentGF.results[${i}].format=this.value" style="width:70px"></td>
+      <td style="padding:4px"><input value="${l.origine||''}" oninput="currentGF.results[${i}].origine=this.value" style="width:100px"></td>
+      <td style="padding:4px"><input type="number" step="0.01" value="${l.pa_ht??''}" oninput="currentGF.results[${i}].pa_ht=parseFloat(this.value)||null" style="width:65px"></td>
+      <td style="padding:4px"><input type="number" step="0.01" value="${l.pvc_uc??''}" oninput="currentGF.results[${i}].pvc_uc=parseFloat(this.value)||null" style="width:65px"></td>
+      <td style="padding:4px"><input type="number" step="0.01" value="${l.pvc_kg??''}" oninput="currentGF.results[${i}].pvc_kg=parseFloat(this.value)||null" style="width:65px"></td>
+      <td style="padding:4px"><input type="number" step="0.01" value="${l.vmh??''}" oninput="currentGF.results[${i}].vmh=parseFloat(this.value)||null" style="width:65px"></td>
+      <td style="padding:4px"><input type="number" step="0.01" value="${l.ca_hebdo??''}" oninput="currentGF.results[${i}].ca_hebdo=parseFloat(this.value)||null" style="width:75px"></td>
+      <td style="padding:4px"><button class="icon-btn danger" onclick="gfRemoveLine(${i})"><i class="ti ti-trash"></i></button></td>
+    </tr>`).join('')}
+    </tbody></table></div>`;
+  el.querySelectorAll('input,select').forEach(i=>{i.style.cssText+=';padding:6px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12px';});
+}
+async function saveGF(){
+  currentGF.enseigne=document.getElementById('gf-enseigne').value;
+  currentGF.centrale=document.getElementById('gf-centrale').value;
+  currentGF.centrale2=document.getElementById('gf-centrale2').value.trim();
+  currentGF.magasin=document.getElementById('gf-magasin').value.trim();
+  currentGF.magasin_id=document.getElementById('gf-magasin').dataset.magasinId||currentGF.magasin_id||null;
+  currentGF.typologie=document.getElementById('gf-typologie').value;
+  currentGF.drive=document.getElementById('gf-drive').value==='true';
+  currentGF.date=document.getElementById('gf-date').value.trim()||nowDateStr();
+  currentGF.commentaire=document.getElementById('gf-commentaire').value.trim();
+  if(!currentGF.enseigne||!currentGF.magasin){alert('Enseigne et magasin sont obligatoires.');return;}
+  const idx=relevesGF.findIndex(r=>r.id===currentGF.id);
+  if(idx>-1)relevesGF[idx]=currentGF;else relevesGF.push(currentGF);
+  saveLocal();
+  enqueueSync('releve_gros_fruits','upsert',currentGF,currentGF.id);
+  desktopTab('gf');
+}
+async function deleteGF(id){
+  if(!confirm('Supprimer ce relevé ?'))return;
+  relevesGF=relevesGF.filter(r=>r.id!==id);
+  saveLocal();
+  enqueueSync('releve_gros_fruits','delete',null,id);
+  renderGFList();
+}
+
+// ---- Référentiel Gros Fruits (admin only, CRUD) ----
+function openGFReferentiel(){
+  const content=document.getElementById('desktop-content');
+  document.getElementById('desktop-back-btn').style.display='';
+  desktopBackTarget='gf';
+  document.getElementById('desktop-topbar-title').textContent='Référentiel Gros Fruits';
+  const types=[
+    {key:'nomenclature',label:'Nomenclature produit'},
+    {key:'type_marque',label:'Type de marque'},
+    {key:'marque',label:'Marques'},
+    {key:'type_produit',label:'Type produit (format)'}
+  ];
+  content.innerHTML=types.map(t=>`
+    <div style="margin-bottom:22px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span class="section-label" style="margin:0">${t.label}</span>
+        <button class="btn btn-sm" onclick="gfRefAdd('${t.key}')"><i class="ti ti-plus"></i> Ajouter</button>
+      </div>
+      <div class="card" id="gfref-${t.key}"></div>
+    </div>`).join('');
+  types.forEach(t=>renderGFRefList(t.key));
+}
+function renderGFRefList(type){
+  const el=document.getElementById('gfref-'+type);
+  if(!el)return;
+  const items=gfReferentiel.filter(r=>r.type===type);
+  if(!items.length){el.innerHTML='<div class="empty">Aucune valeur.</div>';return;}
+  el.innerHTML=items.map(r=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:0.5px solid var(--border)">
+      <span style="font-size:13px">${r.valeur}</span>
+      <button class="icon-btn danger" onclick="gfRefDelete('${r.id}','${type}')"><i class="ti ti-trash"></i></button>
+    </div>`).join('');
+}
+async function gfRefAdd(type){
+  const valeur=prompt('Nouvelle valeur :');
+  if(!valeur||!valeur.trim())return;
+  const id='gfref_'+type+'_'+Date.now();
+  const item={id,type,valeur:valeur.trim()};
+  gfReferentiel.push(item);
+  saveLocal();
+  try{await sb.from('gf_referentiel').insert([item]);}catch(e){}
+  renderGFRefList(type);
+}
+async function gfRefDelete(id,type){
+  if(!confirm('Supprimer cette valeur du référentiel ?'))return;
+  gfReferentiel=gfReferentiel.filter(r=>r.id!==id);
+  saveLocal();
+  try{await sb.from('gf_referentiel').delete().eq('id',id);}catch(e){}
+  renderGFRefList(type);
+}
+
 // AUTH
 let currentUser=null;
 let currentProfile=null;
@@ -1106,6 +1708,18 @@ function reapplyQueueToReleves(){
   });
   syncQueue.filter(e=>e.table==='releves'&&e.op==='delete').forEach(e=>{releves=releves.filter(r=>r.id!==e.id);});
 }
+// Version générique réutilisable pour les nouvelles tables de relevés
+function reapplyQueueToTable(table,arr){
+  loadSyncQueue();
+  syncQueue.filter(e=>e.table===table&&e.op==='upsert'&&e.payload).forEach(e=>{
+    const i=arr.findIndex(r=>r.id===e.id);
+    if(i>-1)arr[i]=e.payload;else arr.push(e.payload);
+  });
+  syncQueue.filter(e=>e.table===table&&e.op==='delete').forEach(e=>{
+    const i=arr.findIndex(r=>r.id===e.id);
+    if(i>-1)arr.splice(i,1);
+  });
+}
 if(typeof window!=='undefined'){
   window.addEventListener('online',()=>{ setSyncStatus('syncing','Reconnexion…'); flushSyncQueue(); });
   window.addEventListener('offline',()=>{ updateSyncBadge(); });
@@ -1123,7 +1737,7 @@ async function init(){
   try{
     loadSyncQueue();
     await flushSyncQueue();   // pousse d'abord les écritures faites hors-ligne
-    const [prodRes,relRes,magRes]=await Promise.all([sb.from('produits').select('*'),sb.from('releves').select('*'),sb.from('magasins').select('*')]);
+    const [prodRes,relRes,magRes,rncRes,pahmRes,gfRes,gfRefRes]=await Promise.all([sb.from('produits').select('*'),sb.from('releves').select('*'),sb.from('magasins').select('*'),sb.from('releves_non_couverts').select('*'),sb.from('releves_pa_hors_mag').select('*'),sb.from('releve_gros_fruits').select('*'),sb.from('gf_referentiel').select('*')]);
     centrales=JSON.parse(localStorage.getItem('rsp_centrales')||'null')||JSON.parse(JSON.stringify(DEFAULT_CENTRALES));
     if(prodRes.data&&prodRes.data.length>0){products=prodRes.data.map(p=>({...p,longueur:p.longueur||p.largeur||0,centrales:p.centrales||[]}));}
     else{products=JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));await sb.from('produits').insert(products.map(p=>({id:p.id,marque:p.marque,ref:p.ref,type:p.type,longueur:p.longueur,hauteur:p.hauteur,poids:p.poids,notes:p.notes,centrales:p.centrales||[]})));}
@@ -1132,6 +1746,13 @@ async function init(){
     releves=(relRes.data||[]).filter(r=>(r.user_id||currentUser.id)===currentUser.id);
     normMlReleves(releves);
     reapplyQueueToReleves();   // garde les relevés encore en file (non synchronisés)
+    relevesNC=(rncRes.data||[]).filter(r=>(r.user_id||currentUser.id)===currentUser.id);
+    relevesPAHM=(pahmRes.data||[]).filter(r=>(r.user_id||currentUser.id)===currentUser.id);
+    relevesGF=(gfRes.data||[]).filter(r=>(r.user_id||currentUser.id)===currentUser.id);
+    gfReferentiel=gfRefRes.data||[];
+    reapplyQueueToTable('releves_non_couverts',relevesNC);
+    reapplyQueueToTable('releves_pa_hors_mag',relevesPAHM);
+    reapplyQueueToTable('releve_gros_fruits',relevesGF);
     saveLocal();
     magasins=(magRes.data||[]).filter(m=>(m.user_id||currentUser.id)===currentUser.id);
     magasinsAllRaw=magRes.data||[]; // copie brute non filtrée, utile pour la vue admin du gestionnaire de magasins
@@ -1155,6 +1776,13 @@ async function init(){
     releves=JSON.parse(localStorage.getItem('rsp_releves')||'[]').filter(r=>!currentUser||(r.user_id||currentUser.id)===currentUser.id);
     normMlReleves(releves);
     reapplyQueueToReleves();
+    relevesNC=JSON.parse(localStorage.getItem('rsp_releves_nc')||'[]').filter(r=>!currentUser||(r.user_id||currentUser.id)===currentUser.id);
+    relevesPAHM=JSON.parse(localStorage.getItem('rsp_releves_pahm')||'[]').filter(r=>!currentUser||(r.user_id||currentUser.id)===currentUser.id);
+    relevesGF=JSON.parse(localStorage.getItem('rsp_releves_gf')||'[]').filter(r=>!currentUser||(r.user_id||currentUser.id)===currentUser.id);
+    gfReferentiel=JSON.parse(localStorage.getItem('rsp_gf_referentiel')||'[]');
+    reapplyQueueToTable('releves_non_couverts',relevesNC);
+    reapplyQueueToTable('releves_pa_hors_mag',relevesPAHM);
+    reapplyQueueToTable('releve_gros_fruits',relevesGF);
     await migrateIntermarche();
     loadDNLocal();
     loadContactsLocal();
@@ -1168,6 +1796,10 @@ function saveLocal(){
   localStorage.setItem('rsp_products',JSON.stringify(products));
   localStorage.setItem('rsp_releves',JSON.stringify(releves));
   localStorage.setItem('rsp_centrales',JSON.stringify(centrales));
+  localStorage.setItem('rsp_releves_nc',JSON.stringify(relevesNC));
+  localStorage.setItem('rsp_releves_pahm',JSON.stringify(relevesPAHM));
+  localStorage.setItem('rsp_releves_gf',JSON.stringify(relevesGF));
+  localStorage.setItem('rsp_gf_referentiel',JSON.stringify(gfReferentiel));
 }
 
 async function migrateIntermarche(){
