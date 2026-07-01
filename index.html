@@ -134,7 +134,7 @@ canvas{display:block;margin:0 auto}
   /* SIDEBAR */
   .desktop-sidebar{
     width:220px;min-width:220px;background:#1a1a18;display:flex;flex-direction:column;
-    min-height:100vh;position:fixed;top:0;left:0;z-index:30;padding:0
+    height:100vh;position:fixed;top:0;left:0;z-index:30;padding:0
   }
   .sidebar-logo{
     display:flex;align-items:center;gap:10px;padding:20px 18px 16px;
@@ -150,7 +150,7 @@ canvas{display:block;margin:0 auto}
     display:flex;align-items:center;gap:6px;padding:8px 18px;
     font-size:11px;color:rgba(255,255,255,0.4);border-bottom:0.5px solid rgba(255,255,255,0.08)
   }
-  .sidebar-nav{flex:1;padding:12px 0}
+  .sidebar-nav{flex:1;padding:12px 0;overflow-y:auto;min-height:0}
   .sidebar-nav-item{
     display:flex;align-items:center;gap:10px;padding:10px 18px;cursor:pointer;
     font-size:13px;font-weight:500;color:rgba(255,255,255,0.55);border:none;background:none;
@@ -1052,9 +1052,12 @@ function renderRNC(targetId){
   const el=document.getElementById(targetId);
   if(!el)return;
   el.innerHTML=`
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:8px">
       <p style="font-size:13px;color:var(--text2);margin:0">Photo de l'assortiment type dans un magasin hors de votre portefeuille (réfs, prix, fournisseur, TCA/TCM).</p>
-      <button class="btn btn-primary" onclick="openNewRNC()"><i class="ti ti-plus"></i> Nouveau relevé</button>
+      <div style="display:flex;gap:8px">
+        ${isAdminNow()?'<button class="btn btn-sm" onclick="openEnseignesRlv(\'enseigne_rnc\',\'rnc\')"><i class="ti ti-building-store"></i> Enseignes</button>':''}
+        <button class="btn btn-primary" onclick="openNewRNC()"><i class="ti ti-plus"></i> Nouveau relevé</button>
+      </div>
     </div>
     <div class="card" id="rnc-list"></div>`;
   renderRNCList();
@@ -1097,10 +1100,7 @@ function renderRNCForm(){
       <div class="form-row">
         <div class="form-group"><label>Enseigne *</label>
           <select id="rnc-enseigne" onchange="rncUpdateCentrales()">
-            <option value="">-- Choisir --</option>
-            <option>Intermarché</option><option>Carrefour</option><option>Carrefour Market</option>
-            <option>Leclerc</option><option>Auchan</option><option>Super U</option><option>Hyper U</option>
-            <option>Lidl</option><option>Grand Frais</option><option>Aldi</option><option>Autre</option>
+            ${enseigneOptionsHtml('enseigne_rnc',currentNC.enseigne)}
           </select>
         </div>
         <div class="form-group"><label>Centrale</label>
@@ -1221,9 +1221,12 @@ function renderPAHM(targetId){
   const el=document.getElementById(targetId);
   if(!el)return;
   el.innerHTML=`
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:8px">
       <p style="font-size:13px;color:var(--text2);margin:0">Prix d'achat capturés chez des clients ayant accès à cette donnée, même sur des références qui ne sont pas en rayon.</p>
-      <button class="btn btn-primary" onclick="openNewPAHM()"><i class="ti ti-plus"></i> Nouveau relevé</button>
+      <div style="display:flex;gap:8px">
+        ${isAdminNow()?'<button class="btn btn-sm" onclick="openEnseignesRlv(\'enseigne_pahm\',\'pahm\')"><i class="ti ti-building-store"></i> Enseignes</button>':''}
+        <button class="btn btn-primary" onclick="openNewPAHM()"><i class="ti ti-plus"></i> Nouveau relevé</button>
+      </div>
     </div>
     <div class="card" id="pahm-list"></div>`;
   renderPAHMList();
@@ -1266,9 +1269,7 @@ function renderPAHMForm(){
       <div class="form-row">
         <div class="form-group"><label>Enseigne *</label>
           <select id="pahm-enseigne" onchange="pahmUpdateCentrales()">
-            <option value="">-- Choisir --</option>
-            <option>Intermarché</option><option>Carrefour</option><option>Carrefour Market</option>
-            <option>Leclerc</option><option>Auchan</option><option>Super U</option><option>Hyper U</option><option>Autre</option>
+            ${enseigneOptionsHtml('enseigne_pahm',currentPAHM.enseigne)}
           </select>
         </div>
         <div class="form-group"><label>Centrale</label>
@@ -1365,6 +1366,20 @@ async function deletePAHM(id){
 // 3) RELEVÉ GROS FRUITS (avec référentiel administrable)
 // ============================================================
 function gfRefByType(type){return gfReferentiel.filter(r=>r.type===type).map(r=>r.valeur);}
+
+// Enseignes par onglet (administrable). Fallback si le référentiel n'a pas encore été seedé.
+const DEFAULT_ENSEIGNES_RLV={
+  enseigne_rnc:['Intermarché','Carrefour','Carrefour Market','Leclerc','Auchan','Super U','Hyper U','Lidl','Grand Frais','Aldi','Autre'],
+  enseigne_pahm:['Intermarché','Carrefour','Carrefour Market','Leclerc','Auchan','Super U','Hyper U','Autre'],
+  enseigne_gf:['Intermarché','Carrefour','Carrefour Market','Leclerc','Auchan','Super U','Hyper U','Lidl','Grand Frais','Aldi','Autre']
+};
+function enseignesForTab(type){
+  const list=gfRefByType(type);
+  return list.length?list:(DEFAULT_ENSEIGNES_RLV[type]||[]);
+}
+function enseigneOptionsHtml(type,selected){
+  return '<option value="">-- Choisir --</option>'+enseignesForTab(type).map(v=>`<option ${v===selected?'selected':''}>${v}</option>`).join('');
+}
 function renderGF(targetId){
   const el=document.getElementById(targetId);
   if(!el)return;
@@ -1372,6 +1387,7 @@ function renderGF(targetId){
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:8px">
       <p style="font-size:13px;color:var(--text2);margin:0">Relevé fruits & légumes (gros fruits) : format, marque, magasin, VMH et PA.</p>
       <div style="display:flex;gap:8px">
+        ${isAdminNow()?'<button class="btn btn-sm" onclick="openEnseignesRlv(\'enseigne_gf\',\'gf\')"><i class="ti ti-building-store"></i> Enseignes</button>':''}
         ${isAdminNow()?'<button class="btn btn-sm" onclick="openGFReferentiel()"><i class="ti ti-settings"></i> Référentiel</button>':''}
         <button class="btn btn-primary" onclick="openNewGF()"><i class="ti ti-plus"></i> Nouveau relevé</button>
       </div>
@@ -1417,10 +1433,7 @@ function renderGFForm(){
       <div class="form-row">
         <div class="form-group"><label>Enseigne *</label>
           <select id="gf-enseigne" onchange="gfUpdateCentrales()">
-            <option value="">-- Choisir --</option>
-            <option>Intermarché</option><option>Carrefour</option><option>Carrefour Market</option>
-            <option>Leclerc</option><option>Auchan</option><option>Super U</option><option>Hyper U</option>
-            <option>Lidl</option><option>Grand Frais</option><option>Aldi</option><option>Autre</option>
+            ${enseigneOptionsHtml('enseigne_gf',currentGF.enseigne)}
           </select>
         </div>
         <div class="form-group"><label>Centrale régionale</label>
@@ -1590,6 +1603,61 @@ async function gfRefDelete(id,type){
   saveLocal();
   try{await sb.from('gf_referentiel').delete().eq('id',id);}catch(e){}
   renderGFRefList(type);
+}
+
+// ---- Gestion des enseignes par onglet (admin only, CRUD) ----
+function openEnseignesRlv(type,backTab){
+  const content=document.getElementById('desktop-content');
+  document.getElementById('desktop-back-btn').style.display='';
+  desktopBackTarget=backTab;
+  const labels={enseigne_rnc:'Magasins non couverts',enseigne_pahm:'PA hors magasin',enseigne_gf:'Gros Fruits'};
+  document.getElementById('desktop-topbar-title').textContent='Enseignes — '+(labels[type]||'');
+  content.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span class="section-label" style="margin:0">Enseignes disponibles dans cet onglet</span>
+      <button class="btn btn-sm" onclick="enseigneRlvAdd('${type}')"><i class="ti ti-plus"></i> Ajouter</button>
+    </div>
+    <div class="card" id="enseignes-rlv-list"></div>`;
+  renderEnseignesRlvList(type);
+  document.querySelectorAll('.sidebar-nav-item').forEach(elx=>elx.classList.remove('active'));
+}
+function renderEnseignesRlvList(type){
+  const el=document.getElementById('enseignes-rlv-list');
+  if(!el)return;
+  const items=gfReferentiel.filter(r=>r.type===type);
+  if(!items.length){
+    el.innerHTML='<div class="empty">Aucune enseigne enregistrée. La liste par défaut est utilisée tant que vous n\'en ajoutez pas.</div>';
+    return;
+  }
+  el.innerHTML=items.map(r=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:0.5px solid var(--border)">
+      <span style="font-size:13px">${r.valeur}</span>
+      <button class="icon-btn danger" onclick="enseigneRlvDelete('${r.id}','${type}')"><i class="ti ti-trash"></i></button>
+    </div>`).join('');
+}
+async function enseigneRlvAdd(type){
+  const valeur=prompt('Nouvelle enseigne :');
+  if(!valeur||!valeur.trim())return;
+  // Si le référentiel est encore vide pour ce type, on seed d'abord la liste par défaut
+  // pour ne pas perdre les enseignes existantes une fois qu'on bascule en mode personnalisé.
+  if(!gfReferentiel.some(r=>r.type===type)){
+    const seed=(DEFAULT_ENSEIGNES_RLV[type]||[]).map((v,i)=>({id:'ens_'+type+'_seed'+i+'_'+Date.now(),type,valeur:v}));
+    gfReferentiel.push(...seed);
+    try{await sb.from('gf_referentiel').insert(seed);}catch(e){}
+  }
+  const id='ens_'+type+'_'+Date.now();
+  const item={id,type,valeur:valeur.trim()};
+  gfReferentiel.push(item);
+  saveLocal();
+  try{await sb.from('gf_referentiel').insert([item]);}catch(e){}
+  renderEnseignesRlvList(type);
+}
+async function enseigneRlvDelete(id,type){
+  if(!confirm('Supprimer cette enseigne ?'))return;
+  gfReferentiel=gfReferentiel.filter(r=>r.id!==id);
+  saveLocal();
+  try{await sb.from('gf_referentiel').delete().eq('id',id);}catch(e){}
+  renderEnseignesRlvList(type);
 }
 
 // AUTH
